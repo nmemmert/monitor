@@ -77,13 +77,18 @@ echo ""
 echo "Step 5: Installing dependencies..."
 npm install --production
 
-# Build client
+# Build client (skip if build folder exists - for low-memory servers)
 echo ""
-echo "Step 6: Building frontend..."
-cd client
-npm install
-npm run build
-cd ..
+echo "Step 6: Setting up frontend..."
+if [ ! -d "client/build" ]; then
+    echo "Building frontend (this may take 10-15 minutes on low-memory servers)..."
+    cd client
+    npm install
+    npm run build
+    cd ..
+else
+    echo "Using pre-built frontend"
+fi
 
 # Setup configuration
 echo ""
