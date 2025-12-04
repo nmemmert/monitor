@@ -33,10 +33,16 @@ echo "  - Install dependencies"
 echo "  - Set up systemd service"
 echo "  - Open firewall port 3001"
 echo ""
-read -p "Continue? (y/n) " -n 1 -r
-echo ""
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    exit 1
+
+# Skip confirmation if running non-interactively or with -y flag
+if [ -t 0 ]; then
+    read -p "Continue? (y/n) " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+else
+    echo "Running in non-interactive mode, continuing..."
 fi
 
 # Update system
@@ -101,11 +107,14 @@ echo "⚙️  Step 7: Setting up configuration..."
 if [ ! -f ".env" ]; then
     cp .env.example .env
     echo "✅ Created .env file"
-    echo ""
-    echo "📝 Configure your settings:"
-    read -p "Enable email notifications? (y/n) " -n 1 -r
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    
+    # Skip interactive config if running non-interactively
+    if [ -t 0 ]; then
+        echo ""
+        echo "📝 Configure your settings:"
+        read -p "Enable email notifications? (y/n) " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
         read -p "SMTP Host (e.g., smtp.gmail.com): " SMTP_HOST
         read -p "SMTP Port (e.g., 587): " SMTP_PORT
         read -p "Email Username: " EMAIL_USER
@@ -121,15 +130,18 @@ if [ ! -f ".env" ]; then
         sed -i "s/EMAIL_PASS=your-app-password/EMAIL_PASS=$EMAIL_PASS/" .env
         sed -i "s/EMAIL_FROM=your-email@gmail.com/EMAIL_FROM=$EMAIL_FROM/" .env
         sed -i "s/EMAIL_TO=your-email@gmail.com/EMAIL_TO=$EMAIL_TO/" .env
-    fi
-    
-    echo ""
-    read -p "Enable webhook notifications? (y/n) " -n 1 -r
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        read -p "Webhook URL: " WEBHOOK_URL
-        sed -i "s/WEBHOOK_ENABLED=false/WEBHOOK_ENABLED=true/" .env
-        sed -i "s|WEBHOOK_URL=https://your-webhook-url.com|WEBHOOK_URL=$WEBHOOK_URL|" .env
+        fi
+        
+        echo ""
+        read -p "Enable webhook notifications? (y/n) " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            read -p "Webhook URL: " WEBHOOK_URL
+            sed -i "s/WEBHOOK_ENABLED=false/WEBHOOK_ENABLED=true/" .env
+            sed -i "s|WEBHOOK_URL=https://your-webhook-url.com|WEBHOOK_URL=$WEBHOOK_URL|" .env
+        fi
+    else
+        echo "⚠️  Running non-interactively. You can configure notifications later in $INSTALL_DIR/.env"
     fi
 else
     echo "✅ .env file already exists"
