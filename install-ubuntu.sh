@@ -115,12 +115,13 @@ fi
 # Start with PM2
 echo ""
 echo "Step 9: Starting application..."
+cd "$INSTALL_DIR"
 if [ "$EUID" -eq 0 ]; then
-    su - $SERVICE_USER -c "cd $INSTALL_DIR && pm2 delete resource-monitor 2>/dev/null || true"
-    su - $SERVICE_USER -c "cd $INSTALL_DIR && pm2 start server/index.js --name resource-monitor"
-    su - $SERVICE_USER -c "pm2 save"
+    sudo -u $SERVICE_USER pm2 delete resource-monitor 2>/dev/null || true
+    sudo -u $SERVICE_USER pm2 start server/index.js --name resource-monitor
+    sudo -u $SERVICE_USER pm2 save
     env PATH=$PATH:/usr/bin pm2 startup systemd -u $SERVICE_USER --hp /home/$SERVICE_USER
-    su - $SERVICE_USER -c "pm2 save"
+    sudo -u $SERVICE_USER pm2 save
 else
     pm2 delete resource-monitor 2>/dev/null || true
     pm2 start server/index.js --name resource-monitor
