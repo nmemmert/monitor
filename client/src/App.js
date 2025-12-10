@@ -71,6 +71,7 @@ function Dashboard() {
                 <div>
                   <h3 className="resource-name">{resource.name}</h3>
                   <p className="resource-url">{resource.url}</p>
+                  <p className="resource-type">Type: {resource.type}</p>
                 </div>
                 <span className={`status-badge status-${resource.status}`}>
                   {resource.status}
@@ -247,6 +248,7 @@ function ResourceDetail() {
           <div>
             <h2>{resource.name}</h2>
             <p style={{ color: '#666' }}>{resource.url}</p>
+            <p className="resource-type">Type: {resource.type}</p>
           </div>
           <div style={{ display: 'flex', gap: '1rem' }}>
             <button className="btn" onClick={toggleEnabled}>
