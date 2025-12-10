@@ -38,7 +38,7 @@ function SettingsWizard() {
     setSaving(true);
     try {
       await axios.post('/api/settings', settings);
-      alert('Settings saved successfully! You may need to restart the server for changes to take effect.');
+      alert('Settings saved successfully! Changes apply immediately.');
     } catch (error) {
       console.error('Error saving settings:', error);
       alert('Error saving settings');
