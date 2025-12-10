@@ -11,6 +11,9 @@ function Dashboard() {
   const [groups, setGroups] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [editingId, setEditingId] = useState(null);
+  const [editData, setEditData] = useState({});
   const [formData, setFormData] = useState({
     name: '',
     url: '',
@@ -64,12 +67,53 @@ function Dashboard() {
     }
   };
 
+  const handleEditResource = async (id) => {
+    try {
+      await axios.put(`/api/resources/${id}`, {
+        ...resources.find(r => r.id === id),
+        ...editData,
+      });
+      setEditingId(null);
+      setEditData({});
+      loadResources();
+    } catch (error) {
+      console.error('Error updating resource:', error);
+      alert('Error updating resource');
+    }
+  };
+
+  const handleDeleteResource = async (id) => {
+    if (window.confirm('Delete this resource?')) {
+      try {
+        await axios.delete(`/api/resources/${id}`);
+        loadResources();
+      } catch (error) {
+        console.error('Error deleting resource:', error);
+        alert('Error deleting resource');
+      }
+    }
+  };
+
+  const toggleGroup = (groupId) => {
+    setCollapsedGroups(prev => ({
+      ...prev,
+      [groupId]: !prev[groupId]
+    }));
+  };
+
   const groupResourcesMap = resources.reduce((acc, r) => {
     const gid = r.group_id || 'ungrouped';
     if (!acc[gid]) acc[gid] = [];
     acc[gid].push(r);
     return acc;
   }, {});
+
+  const getGroupStats = (groupResources) => {
+    if (!groupResources || groupResources.length === 0) return { uptime: 0, avgResponse: 0, total: 0 };
+    const uptime = (groupResources.reduce((sum, r) => sum + parseFloat(r.uptime || 0), 0) / groupResources.length).toFixed(2);
+    const avgResponse = (groupResources.reduce((sum, r) => sum + parseInt(r.avgResponseTime || 0), 0) / groupResources.length).toFixed(0);
+    return { uptime, avgResponse, total: groupResources.length };
+  };
 
   const renderResourceCard = (resource) => {
     const sparkData = (resource.recentChecks || []).map((c, idx) => ({
@@ -78,15 +122,28 @@ function Dashboard() {
       statusValue: c.status === 'up' ? 1 : 0,
     }));
 
+    const isEditing = editingId === resource.id;
+
     return (
       <div
         key={resource.id}
         className="resource-card compact"
-        onClick={() => navigate(`/resource/${resource.id}`)}
+        onClick={(e) => !isEditing && !e.target.closest('.card-actions') && navigate(`/resource/${resource.id}`)}
       >
         <div className="resource-header">
-          <div>
-            <h3 className="resource-name">{resource.name}</h3>
+          <div style={{ flex: 1 }}>
+            {isEditing ? (
+              <input
+                type="text"
+                value={editData.name || resource.name}
+                onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                onClick={(e) => e.stopPropagation()}
+                className="edit-input"
+                placeholder="Resource name"
+              />
+            ) : (
+              <h3 className="resource-name">{resource.name}</h3>
+            )}
             <p className="resource-url">{resource.url}</p>
             <p className="resource-type">Type: {resource.type}</p>
           </div>
@@ -101,11 +158,15 @@ function Dashboard() {
 
         <div className="resource-meta">
           <div>
-            <p className="stat-value small">{resource.uptime}%</p>
+            <p className="stat-value small" style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); if (!isEditing) setEditingId(resource.id); }}>
+              {resource.uptime}%
+            </p>
             <p className="stat-label">Uptime (24h)</p>
           </div>
           <div>
-            <p className="stat-value small">{resource.avgResponseTime}ms</p>
+            <p className="stat-value small" style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); if (!isEditing) setEditingId(resource.id); }}>
+              {resource.avgResponseTime}ms
+            </p>
             <p className="stat-label">Avg Resp</p>
           </div>
           <div className="sparkline">
@@ -121,7 +182,29 @@ function Dashboard() {
           </div>
         </div>
 
-        {resource.lastCheck && (
+        {isEditing ? (
+          <div className="card-edit-form">
+            <div className="edit-field">
+              <label>Check Interval (ms)</label>
+              <input type="number" value={editData.check_interval || resource.check_interval} onChange={(e) => setEditData({ ...editData, check_interval: parseInt(e.target.value) })} onClick={(e) => e.stopPropagation()} />
+            </div>
+            <div className="edit-field">
+              <label>Timeout (ms)</label>
+              <input type="number" value={editData.timeout || resource.timeout} onChange={(e) => setEditData({ ...editData, timeout: parseInt(e.target.value) })} onClick={(e) => e.stopPropagation()} />
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <button className="btn btn-sm btn-primary" onClick={(e) => { e.stopPropagation(); handleEditResource(resource.id); }}>Save</button>
+              <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setEditingId(null); }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <div className="card-actions">
+            <button className="btn-icon" title="Edit" onClick={(e) => { e.stopPropagation(); setEditingId(resource.id); setEditData(resource); }}>✎</button>
+            <button className="btn-icon" title="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteResource(resource.id); }}>🗑</button>
+          </div>
+        )}
+
+        {!isEditing && resource.lastCheck && (
           <p className="last-check">
             Last: {new Date(resource.lastCheck).toLocaleString()}
           </p>
@@ -151,24 +234,44 @@ function Dashboard() {
         </div>
       ) : (
         <div>
-          {groups.map((group) => (
-            <div key={group.id} style={{ marginBottom: '3rem' }}>
-              <h3 style={{ marginBottom: '1rem', borderBottom: '2px solid #667eea', paddingBottom: '0.5rem' }}>
-                {group.name}
-              </h3>
-              <div className="dashboard-grid">
-                {groupResourcesMap[group.id]?.map(renderResourceCard)}
+          {groups.map((group) => {
+            const groupStats = getGroupStats(groupResourcesMap[group.id]);
+            const isCollapsed = collapsedGroups[group.id];
+            return (
+              <div key={group.id} className="group-section">
+                <div className="group-header" onClick={() => toggleGroup(group.id)}>
+                  <span className="group-toggle">{isCollapsed ? '▶' : '▼'}</span>
+                  <h3 style={{ margin: 0, flex: 1 }}>{group.name}</h3>
+                  <div className="group-stats">
+                    <span className="group-stat">{groupStats.total} resources</span>
+                    <span className="group-stat">{groupStats.uptime}% up</span>
+                    <span className="group-stat">{groupStats.avgResponse}ms avg</span>
+                  </div>
+                </div>
+                {!isCollapsed && (
+                  <div className="dashboard-grid">
+                    {groupResourcesMap[group.id]?.map(renderResourceCard)}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
           {groupResourcesMap['ungrouped']?.length > 0 && (
-            <div style={{ marginBottom: '3rem' }}>
-              <h3 style={{ marginBottom: '1rem', borderBottom: '2px solid #667eea', paddingBottom: '0.5rem' }}>
-                Ungrouped
-              </h3>
-              <div className="dashboard-grid">
-                {groupResourcesMap['ungrouped'].map(renderResourceCard)}
+            <div className="group-section">
+              <div className="group-header" onClick={() => toggleGroup('ungrouped')}>
+                <span className="group-toggle">{collapsedGroups['ungrouped'] ? '▶' : '▼'}</span>
+                <h3 style={{ margin: 0, flex: 1 }}>Ungrouped</h3>
+                <div className="group-stats">
+                  <span className="group-stat">{groupResourcesMap['ungrouped'].length} resources</span>
+                  <span className="group-stat">{getGroupStats(groupResourcesMap['ungrouped']).uptime}% up</span>
+                  <span className="group-stat">{getGroupStats(groupResourcesMap['ungrouped']).avgResponse}ms avg</span>
+                </div>
               </div>
+              {!collapsedGroups['ungrouped'] && (
+                <div className="dashboard-grid">
+                  {groupResourcesMap['ungrouped'].map(renderResourceCard)}
+                </div>
+              )}
             </div>
           )}
         </div>
