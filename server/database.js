@@ -41,4 +41,12 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_incidents_resource_id ON incidents(resource_id);
 `);
 
+// Lightweight migration: add details column for per-check metadata if missing
+try {
+  db.prepare("ALTER TABLE checks ADD COLUMN details TEXT").run();
+  // Column added
+} catch (err) {
+  // Ignore if the column already exists
+}
+
 module.exports = db;

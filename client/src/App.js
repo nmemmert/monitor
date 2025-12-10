@@ -130,6 +130,22 @@ function Dashboard() {
               </div>
 
               <div className="form-group">
+                <label>Check Type</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                >
+                  <option value="http">HTTP/HTTPS</option>
+                  <option value="health">Service Health</option>
+                  <option value="tcp">TCP Port</option>
+                  <option value="tls">TLS/SSL</option>
+                  <option value="dns">DNS Lookup</option>
+                  <option value="websocket">WebSocket</option>
+                  <option value="icmp">ICMP Ping</option>
+                </select>
+              </div>
+
+              <div className="form-group">
                 <label>Check Interval (ms)</label>
                 <input
                   type="number"
