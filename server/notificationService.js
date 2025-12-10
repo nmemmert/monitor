@@ -48,15 +48,17 @@ class NotificationService {
     }
   }
 
-  async sendAlert(resource, incident) {
-    const message = incident.type === 'started'
-      ? `🔴 ${resource.name} is DOWN!\n\nURL: ${resource.url}\nTime: ${new Date().toLocaleString()}`
-      : `🟢 ${resource.name} is back UP!\n\nURL: ${resource.url}\nTime: ${new Date().toLocaleString()}`;
+  async sendAlert(resource, incident, stats = null) {
+    const isDown = incident.type === 'started';
+    const statusEmoji = isDown ? '🔴' : '🟢';
+    const statusText = isDown ? 'DOWN' : 'UP';
+    
+    const message = `${statusEmoji} ${resource.name} is ${statusText}!\n\nURL: ${resource.url}\nCheck Type: ${resource.type || 'http'}\nTime: ${new Date().toLocaleString()}`;
 
     const promises = [];
 
     if (this.emailEnabled) {
-      promises.push(this.sendEmail(resource, message, incident.type));
+      promises.push(this.sendEmail(resource, message, incident.type, stats));
     }
 
     if (this.webhookEnabled) {
@@ -66,23 +68,87 @@ class NotificationService {
     await Promise.allSettled(promises);
   }
 
-  async sendEmail(resource, message, type) {
+  async sendEmail(resource, message, type, stats = null) {
     if (!this.transporter) {
       console.error('Email config incomplete; skipping email');
       return;
     }
 
     try {
+      let htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: ${type === 'started' ? '#d32f2f' : '#388e3c'};">${type === 'started' ? '🔴 Alert' : '🟢 Recovered'}</h2>
+          <p><strong>Resource:</strong> ${resource.name}</p>
+          <p><strong>Status:</strong> ${type === 'started' ? 'DOWN' : 'UP'}</p>
+          <p><strong>URL:</strong> <a href="${resource.url}">${resource.url}</a></p>
+          <p><strong>Check Type:</strong> ${resource.type || 'http'}</p>
+          <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+      `;
+
+      if (stats) {
+        htmlContent += `
+          <div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 5px;">
+            <h3 style="margin-top: 0;">Last 24 Hours Performance</h3>
+            <p><strong>Uptime:</strong> ${(stats.uptime * 100).toFixed(2)}%</p>
+            <p><strong>Avg Response Time:</strong> ${stats.avgResponseTime.toFixed(0)}ms</p>
+            <p><strong>Last Check:</strong> ${stats.lastCheck || 'Never'}</p>
+        `;
+
+        if (stats.recentChecks && stats.recentChecks.length > 0) {
+          const graph = this.generateAsciiGraph(stats.recentChecks);
+          htmlContent += `
+            <p><strong>Recent Response Times (last 12 checks):</strong></p>
+            <pre style="background: #fff; padding: 10px; border-left: 3px solid #2196F3; font-size: 12px;">${graph}</pre>
+          `;
+        }
+
+        htmlContent += `</div>`;
+      }
+
+      htmlContent += `</div>`;
+
       await this.transporter.sendMail({
         from: this.config.email_from,
         to: this.config.email_to,
         subject: `Alert: ${resource.name} is ${type === 'started' ? 'DOWN' : 'UP'}`,
         text: message,
+        html: htmlContent,
       });
       console.log(`Email sent for ${resource.name}`);
     } catch (error) {
       console.error('Email error:', error.message);
     }
+  }
+
+  generateAsciiGraph(recentChecks) {
+    if (!recentChecks || recentChecks.length === 0) return '';
+
+    // Get last 12 checks and their response times
+    const checks = recentChecks.slice(-12);
+    const times = checks.map(c => c.response_time || 0);
+    const maxTime = Math.max(...times);
+    
+    if (maxTime === 0) return 'No data';
+
+    // Simple ASCII bar chart (8 rows)
+    const height = 8;
+    let graph = '';
+    
+    for (let row = height; row > 0; row--) {
+      const threshold = (maxTime / height) * row;
+      for (const time of times) {
+        graph += time >= threshold ? '█' : ' ';
+      }
+      graph += '\n';
+    }
+    
+    // Add baseline
+    graph += times.map(() => '─').join('') + '\n';
+    
+    // Add labels
+    graph += `0ms${' '.repeat(Math.max(0, times.length - 5))}${(maxTime).toFixed(0)}ms`;
+
+    return graph;
   }
 
   async sendWebhook(resource, message, type) {

@@ -41,7 +41,15 @@ class Scheduler {
         );
 
         if (incident.type !== 'none') {
-          await notificationService.sendAlert(resource, incident);
+          const stats = monitorService.getResourceStats(resource.id, 24);
+          const recentChecks = db.prepare(`
+            SELECT response_time, status FROM checks 
+            WHERE resource_id = ? 
+            ORDER BY checked_at DESC 
+            LIMIT 12
+          `).all(resource.id);
+          stats.recentChecks = recentChecks.reverse();
+          await notificationService.sendAlert(resource, incident, stats);
         }
 
         console.log(`Checked ${resource.name}: ${result.status} (${result.response_time}ms)`);
