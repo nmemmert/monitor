@@ -2,9 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import {
-  LineChart,
-  Line,
-  AreaChart,
   Area,
   XAxis,
   YAxis,
@@ -22,10 +19,6 @@ function History() {
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadHistory();
-  }, [days]);
-
   const loadHistory = async () => {
     setLoading(true);
     try {
@@ -37,6 +30,11 @@ function History() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days]);
 
   if (loading) return <div className="container">Loading history...</div>;
 
