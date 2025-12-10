@@ -6,6 +6,7 @@ require('dotenv').config();
 const db = require('./database');
 const scheduler = require('./scheduler');
 const monitorService = require('./monitorService');
+const notificationService = require('./notificationService');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -181,6 +182,32 @@ TIMEOUT=${timeout}
 
   try {
     fs.writeFileSync(envPath, envContent);
+
+    // Keep runtime config in sync without requiring a restart
+    process.env.EMAIL_ENABLED = String(email_enabled);
+    process.env.EMAIL_HOST = email_host;
+    process.env.EMAIL_PORT = String(email_port);
+    process.env.EMAIL_USER = email_user;
+    process.env.EMAIL_PASS = email_pass || process.env.EMAIL_PASS || '';
+    process.env.EMAIL_FROM = email_from;
+    process.env.EMAIL_TO = email_to;
+    process.env.WEBHOOK_ENABLED = String(webhook_enabled);
+    process.env.WEBHOOK_URL = webhook_url;
+    process.env.CHECK_INTERVAL = String(check_interval);
+    process.env.TIMEOUT = String(timeout);
+
+    notificationService.setConfig({
+      email_enabled: email_enabled === true || email_enabled === 'true',
+      email_host,
+      email_port,
+      email_user,
+      email_pass: email_pass || process.env.EMAIL_PASS || '',
+      email_from,
+      email_to,
+      webhook_enabled: webhook_enabled === true || webhook_enabled === 'true',
+      webhook_url,
+    });
+
     res.json({ message: 'Settings saved successfully' });
   } catch (error) {
     console.error('Error saving settings:', error);
