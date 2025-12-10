@@ -128,6 +128,14 @@ app.get('/api/dashboard', (req, res) => {
       WHERE resource_id = ? AND resolved_at IS NULL
     `).get(resource.id);
 
+    const recentChecks = db.prepare(`
+      SELECT response_time, status, checked_at
+      FROM checks
+      WHERE resource_id = ?
+      ORDER BY checked_at DESC
+      LIMIT 15
+    `).all(resource.id).reverse();
+
     return {
       id: resource.id,
       name: resource.name,
@@ -140,6 +148,7 @@ app.get('/api/dashboard', (req, res) => {
       avgResponseTime: stats.avgResponseTime,
       lastCheck: lastCheck?.checked_at,
       hasActiveIncident: !!activeIncident,
+      recentChecks,
     };
   });
 

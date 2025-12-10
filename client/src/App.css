@@ -22,18 +22,25 @@
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .resource-card {
   background: white;
-  border-radius: 8px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   transition: transform 0.2s, box-shadow 0.2s;
   cursor: pointer;
+  border: 1px solid #f1f1f3;
+}
+
+.resource-card.compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .resource-card:hover {
@@ -45,25 +52,25 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 .resource-name {
-  font-size: 1.2rem;
-  font-weight: 600;
-  margin: 0 0 0.25rem 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 0.2rem 0;
 }
 
 .resource-url {
   color: #666;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   word-break: break-all;
 }
 
 .status-badge {
   padding: 0.25rem 0.75rem;
   border-radius: 12px;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
 }
@@ -95,10 +102,14 @@
 }
 
 .stat-value {
-  font-size: 1.5rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: #333;
   margin: 0;
+}
+
+.stat-value.small {
+  font-size: 1.05rem;
 }
 
 .stat-label {
@@ -106,6 +117,24 @@
   color: #666;
   text-transform: uppercase;
   margin: 0;
+}
+
+.resource-meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sparkline {
+  width: 100%;
+  height: 52px;
+}
+
+.last-check {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #999;
 }
 
 .btn {

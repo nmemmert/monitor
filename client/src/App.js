@@ -71,6 +71,65 @@ function Dashboard() {
     return acc;
   }, {});
 
+  const renderResourceCard = (resource) => {
+    const sparkData = (resource.recentChecks || []).map((c, idx) => ({
+      idx,
+      responseTime: c.response_time || 0,
+      statusValue: c.status === 'up' ? 1 : 0,
+    }));
+
+    return (
+      <div
+        key={resource.id}
+        className="resource-card compact"
+        onClick={() => navigate(`/resource/${resource.id}`)}
+      >
+        <div className="resource-header">
+          <div>
+            <h3 className="resource-name">{resource.name}</h3>
+            <p className="resource-url">{resource.url}</p>
+            <p className="resource-type">Type: {resource.type}</p>
+          </div>
+          <span className={`status-badge status-${resource.status}`}>
+            {resource.status}
+          </span>
+        </div>
+
+        {resource.hasActiveIncident && (
+          <div className="incident-badge">⚠️ Active Incident</div>
+        )}
+
+        <div className="resource-meta">
+          <div>
+            <p className="stat-value small">{resource.uptime}%</p>
+            <p className="stat-label">Uptime (24h)</p>
+          </div>
+          <div>
+            <p className="stat-value small">{resource.avgResponseTime}ms</p>
+            <p className="stat-label">Avg Resp</p>
+          </div>
+          <div className="sparkline">
+            {sparkData.length > 1 ? (
+              <ResponsiveContainer width="100%" height={50}>
+                <LineChart data={sparkData} margin={{ top: 4, bottom: 0, left: 0, right: 0 }}>
+                  <Line type="monotone" dataKey="responseTime" stroke="#667eea" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <span style={{ fontSize: '0.75rem', color: '#999' }}>No recent data</span>
+            )}
+          </div>
+        </div>
+
+        {resource.lastCheck && (
+          <p className="last-check">
+            Last: {new Date(resource.lastCheck).toLocaleString()}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -98,45 +157,7 @@ function Dashboard() {
                 {group.name}
               </h3>
               <div className="dashboard-grid">
-                {groupResourcesMap[group.id]?.map((resource) => (
-            <div
-              key={resource.id}
-              className="resource-card"
-              onClick={() => navigate(`/resource/${resource.id}`)}
-            >
-              <div className="resource-header">
-                <div>
-                  <h3 className="resource-name">{resource.name}</h3>
-                  <p className="resource-url">{resource.url}</p>
-                  <p className="resource-type">Type: {resource.type}</p>
-                </div>
-                <span className={`status-badge status-${resource.status}`}>
-                  {resource.status}
-                </span>
-              </div>
-
-              {resource.hasActiveIncident && (
-                <div className="incident-badge">⚠️ Active Incident</div>
-              )}
-
-              <div className="stats-grid">
-                <div className="stat">
-                  <p className="stat-value">{resource.uptime}%</p>
-                  <p className="stat-label">Uptime (24h)</p>
-                </div>
-                <div className="stat">
-                  <p className="stat-value">{resource.avgResponseTime}ms</p>
-                  <p className="stat-label">Avg Response</p>
-                </div>
-              </div>
-
-              {resource.lastCheck && (
-                <p style={{ marginTop: '1rem', fontSize: '0.75rem', color: '#999' }}>
-                  Last checked: {new Date(resource.lastCheck).toLocaleString()}
-                </p>
-              )}
-            </div>
-                ))}
+                {groupResourcesMap[group.id]?.map(renderResourceCard)}
               </div>
             </div>
           ))}
@@ -146,45 +167,7 @@ function Dashboard() {
                 Ungrouped
               </h3>
               <div className="dashboard-grid">
-                {groupResourcesMap['ungrouped'].map((resource) => (
-            <div
-              key={resource.id}
-              className="resource-card"
-              onClick={() => navigate(`/resource/${resource.id}`)}
-            >
-              <div className="resource-header">
-                <div>
-                  <h3 className="resource-name">{resource.name}</h3>
-                  <p className="resource-url">{resource.url}</p>
-                  <p className="resource-type">Type: {resource.type}</p>
-                </div>
-                <span className={`status-badge status-${resource.status}`}>
-                  {resource.status}
-                </span>
-              </div>
-
-              {resource.hasActiveIncident && (
-                <div className="incident-badge">⚠️ Active Incident</div>
-              )}
-
-              <div className="stats-grid">
-                <div className="stat">
-                  <p className="stat-value">{resource.uptime}%</p>
-                  <p className="stat-label">Uptime (24h)</p>
-                </div>
-                <div className="stat">
-                  <p className="stat-value">{resource.avgResponseTime}ms</p>
-                  <p className="stat-label">Avg Response</p>
-                </div>
-              </div>
-
-              {resource.lastCheck && (
-                <p style={{ marginTop: '1rem', fontSize: '0.75rem', color: '#999' }}>
-                  Last checked: {new Date(resource.lastCheck).toLocaleString()}
-                </p>
-              )}
-            </div>
-                ))}
+                {groupResourcesMap['ungrouped'].map(renderResourceCard)}
               </div>
             </div>
           )}
