@@ -14,6 +14,16 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Set correct MIME types for static files
+app.use((req, res, next) => {
+  if (req.url.endsWith('.js')) {
+    res.setHeader('Content-Type', 'application/javascript');
+  } else if (req.url.endsWith('.css')) {
+    res.setHeader('Content-Type', 'text/css');
+  }
+  next();
+});
+
 // API Routes
 
 // Get all groups
