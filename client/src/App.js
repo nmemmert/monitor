@@ -4,6 +4,7 @@ import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import './App.css';
 import SettingsWizard from './SettingsWizard';
+import History from './History';
 
 function Dashboard() {
   const [resources, setResources] = useState([]);
@@ -500,6 +501,7 @@ function Navbar() {
           <h1>🔍 Resource Monitor</h1>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
             <Link to="/" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>Dashboard</Link>
+            <Link to="/history" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>History</Link>
             <Link to="/settings" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               Settings
               {!notificationsConfigured && (
@@ -534,6 +536,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/resource/:id" element={<ResourceDetail />} />
+          <Route path="/history" element={<History />} />
           <Route path="/settings" element={<div className="container"><SettingsWizard /></div>} />
         </Routes>
       </div>

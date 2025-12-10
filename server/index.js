@@ -246,6 +246,73 @@ TIMEOUT=${timeout}
   }
 });
 
+// Get historical check data for a resource
+app.get('/api/resources/:id/history', (req, res) => {
+  const { id } = req.params;
+  const { days = 7 } = req.query;
+
+  const resource = db.prepare('SELECT * FROM resources WHERE id = ?').get(id);
+  if (!resource) {
+    return res.status(404).json({ error: 'Resource not found' });
+  }
+
+  const checks = db.prepare(`
+    SELECT 
+      id,
+      status,
+      response_time,
+      status_code,
+      error_message,
+      details,
+      checked_at
+    FROM checks
+    WHERE resource_id = ? AND checked_at > datetime('now', ?)
+    ORDER BY checked_at ASC
+  `).all(id, `-${days} days`);
+
+  res.json({
+    resource,
+    checks,
+    count: checks.length,
+  });
+});
+
+// Get all resources' check history for dashboard
+app.get('/api/history/overview', (req, res) => {
+  const { days = 7 } = req.query;
+
+  const resources = db.prepare('SELECT * FROM resources WHERE enabled = 1 ORDER BY name').all();
+  
+  const overview = resources.map(resource => {
+    const checks = db.prepare(`
+      SELECT 
+        status,
+        response_time,
+        checked_at
+      FROM checks
+      WHERE resource_id = ? AND checked_at > datetime('now', ?)
+      ORDER BY checked_at ASC
+    `).all(resource.id, `-${days} days`);
+
+    const upCount = checks.filter(c => c.status === 'up').length;
+    const uptime = checks.length > 0 ? (upCount / checks.length * 100) : 0;
+    const avgResponseTime = checks.length > 0 
+      ? checks.reduce((sum, c) => sum + (c.response_time || 0), 0) / checks.length 
+      : 0;
+
+    return {
+      id: resource.id,
+      name: resource.name,
+      type: resource.type,
+      checks,
+      uptime: uptime.toFixed(2),
+      avgResponseTime: avgResponseTime.toFixed(0),
+    };
+  });
+
+  res.json(overview);
+});
+
 // Test email
 app.post('/api/test-email', async (req, res) => {
   const nodemailer = require('nodemailer');
