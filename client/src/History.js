@@ -19,21 +19,20 @@ function History() {
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
 
-  const loadHistory = async () => {
-    setLoading(true);
-    try {
-      const response = await axios.get('/api/history/overview', { params: { days } });
-      setHistoryData(response.data);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading history:', error);
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const loadHistory = async () => {
+      setLoading(true);
+      try {
+        const response = await axios.get('/api/history/overview', { params: { days } });
+        setHistoryData(response.data);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error loading history:', error);
+        setLoading(false);
+      }
+    };
+
     loadHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days]);
 
   if (loading) return <div className="container">Loading history...</div>;
