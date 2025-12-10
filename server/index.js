@@ -16,9 +16,35 @@ app.use(express.json());
 
 // API Routes
 
+// Get all groups
+app.get('/api/groups', (req, res) => {
+  const groups = db.prepare('SELECT * FROM groups ORDER BY name').all();
+  res.json(groups);
+});
+
+// Create group
+app.post('/api/groups', (req, res) => {
+  const { name, description } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: 'Group name is required' });
+  }
+  try {
+    const result = db.prepare('INSERT INTO groups (name, description) VALUES (?, ?)').run(name, description || '');
+    res.json({ id: result.lastInsertRowid, message: 'Group created' });
+  } catch (error) {
+    res.status(400).json({ error: 'Group name must be unique' });
+  }
+});
+
+// Delete group
+app.delete('/api/groups/:id', (req, res) => {
+  db.prepare('DELETE FROM groups WHERE id = ?').run(req.params.id);
+  res.json({ message: 'Group deleted' });
+});
+
 // Get all resources
 app.get('/api/resources', (req, res) => {
-  const resources = db.prepare('SELECT * FROM resources ORDER BY name').all();
+  const resources = db.prepare('SELECT * FROM resources ORDER BY group_id, name').all();
   res.json(resources);
 });
 
@@ -46,15 +72,15 @@ app.get('/api/resources/:id', (req, res) => {
 
 // Create resource
 app.post('/api/resources', (req, res) => {
-  const { name, url, type, check_interval, timeout } = req.body;
+  const { name, url, type, check_interval, timeout, group_id } = req.body;
 
   if (!name || !url) {
     return res.status(400).json({ error: 'Name and URL are required' });
   }
 
   const stmt = db.prepare(`
-    INSERT INTO resources (name, url, type, check_interval, timeout)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO resources (name, url, type, check_interval, timeout, group_id)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
@@ -62,7 +88,8 @@ app.post('/api/resources', (req, res) => {
     url,
     type || 'http',
     check_interval || 60000,
-    timeout || 5000
+    timeout || 5000,
+    group_id || null
   );
 
   res.json({ id: result.lastInsertRowid, message: 'Resource created' });
@@ -70,15 +97,15 @@ app.post('/api/resources', (req, res) => {
 
 // Update resource
 app.put('/api/resources/:id', (req, res) => {
-  const { name, url, type, check_interval, timeout, enabled } = req.body;
+  const { name, url, type, check_interval, timeout, enabled, group_id } = req.body;
 
   const stmt = db.prepare(`
     UPDATE resources 
-    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?
+    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?
     WHERE id = ?
   `);
 
-  stmt.run(name, url, type, check_interval, timeout, enabled ? 1 : 0, req.params.id);
+  stmt.run(name, url, type, check_interval, timeout, enabled ? 1 : 0, group_id || null, req.params.id);
   res.json({ message: 'Resource updated' });
 });
 
@@ -88,9 +115,11 @@ app.delete('/api/resources/:id', (req, res) => {
   res.json({ message: 'Resource deleted' });
 });
 
-// Get dashboard overview
+// Get dashboard overview (grouped)
 app.get('/api/dashboard', (req, res) => {
-  const resources = db.prepare('SELECT * FROM resources').all();
+  const resources = db.prepare('SELECT * FROM resources ORDER BY group_id, name').all();
+  const groups = db.prepare('SELECT * FROM groups ORDER BY name').all();
+  
   const overview = resources.map(resource => {
     const lastCheck = monitorService.getLastCheck(resource.id);
     const stats = monitorService.getResourceStats(resource.id, 24);
@@ -103,6 +132,8 @@ app.get('/api/dashboard', (req, res) => {
       id: resource.id,
       name: resource.name,
       url: resource.url,
+      type: resource.type,
+      group_id: resource.group_id,
       enabled: resource.enabled,
       status: lastCheck?.status || 'unknown',
       uptime: stats.uptime,
@@ -112,7 +143,7 @@ app.get('/api/dashboard', (req, res) => {
     };
   });
 
-  res.json(overview);
+  res.json({ resources: overview, groups });
 });
 
 // Get incidents

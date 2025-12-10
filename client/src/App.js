@@ -7,14 +7,18 @@ import SettingsWizard from './SettingsWizard';
 
 function Dashboard() {
   const [resources, setResources] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     url: '',
     type: 'http',
     check_interval: 60000,
     timeout: 5000,
+    group_id: null,
   });
+  const [groupData, setGroupData] = useState({ name: '', description: '' });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -26,9 +30,23 @@ function Dashboard() {
   const loadResources = async () => {
     try {
       const response = await axios.get('/api/dashboard');
-      setResources(response.data);
+      setResources(response.data.resources);
+      setGroups(response.data.groups || []);
     } catch (error) {
       console.error('Error loading resources:', error);
+    }
+  };
+
+  const handleCreateGroup = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post('/api/groups', groupData);
+      setShowGroupModal(false);
+      setGroupData({ name: '', description: '' });
+      loadResources();
+    } catch (error) {
+      console.error('Error creating group:', error);
+      alert('Error creating group');
     }
   };
 
@@ -45,13 +63,25 @@ function Dashboard() {
     }
   };
 
+  const groupResourcesMap = resources.reduce((acc, r) => {
+    const gid = r.group_id || 'ungrouped';
+    if (!acc[gid]) acc[gid] = [];
+    acc[gid].push(r);
+    return acc;
+  }, {});
+
   return (
     <div className="container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <h2>Resource Monitor Dashboard</h2>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          + Add Resource
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="btn btn-secondary" onClick={() => setShowGroupModal(true)}>
+            + New Group
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+            + Add Resource
+          </button>
+        </div>
       </div>
 
       {resources.length === 0 ? (
@@ -60,8 +90,14 @@ function Dashboard() {
           <p>Add your first resource to start monitoring</p>
         </div>
       ) : (
-        <div className="dashboard-grid">
-          {resources.map((resource) => (
+        <div>
+          {groups.map((group) => (
+            <div key={group.id} style={{ marginBottom: '3rem' }}>
+              <h3 style={{ marginBottom: '1rem', borderBottom: '2px solid #667eea', paddingBottom: '0.5rem' }}>
+                {group.name}
+              </h3>
+              <div className="dashboard-grid">
+                {groupResourcesMap[group.id]?.map((resource) => (
             <div
               key={resource.id}
               className="resource-card"
@@ -99,7 +135,97 @@ function Dashboard() {
                 </p>
               )}
             </div>
+                ))}
+              </div>
+            </div>
           ))}
+          {groupResourcesMap['ungrouped']?.length > 0 && (
+            <div style={{ marginBottom: '3rem' }}>
+              <h3 style={{ marginBottom: '1rem', borderBottom: '2px solid #667eea', paddingBottom: '0.5rem' }}>
+                Ungrouped
+              </h3>
+              <div className="dashboard-grid">
+                {groupResourcesMap['ungrouped'].map((resource) => (
+            <div
+              key={resource.id}
+              className="resource-card"
+              onClick={() => navigate(`/resource/${resource.id}`)}
+            >
+              <div className="resource-header">
+                <div>
+                  <h3 className="resource-name">{resource.name}</h3>
+                  <p className="resource-url">{resource.url}</p>
+                  <p className="resource-type">Type: {resource.type}</p>
+                </div>
+                <span className={`status-badge status-${resource.status}`}>
+                  {resource.status}
+                </span>
+              </div>
+
+              {resource.hasActiveIncident && (
+                <div className="incident-badge">⚠️ Active Incident</div>
+              )}
+
+              <div className="stats-grid">
+                <div className="stat">
+                  <p className="stat-value">{resource.uptime}%</p>
+                  <p className="stat-label">Uptime (24h)</p>
+                </div>
+                <div className="stat">
+                  <p className="stat-value">{resource.avgResponseTime}ms</p>
+                  <p className="stat-label">Avg Response</p>
+                </div>
+              </div>
+
+              {resource.lastCheck && (
+                <p style={{ marginTop: '1rem', fontSize: '0.75rem', color: '#999' }}>
+                  Last checked: {new Date(resource.lastCheck).toLocaleString()}
+                </p>
+              )}
+            </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showGroupModal && (
+        <div className="modal-overlay" onClick={() => setShowGroupModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Create New Group</h2>
+            <form onSubmit={handleCreateGroup}>
+              <div className="form-group">
+                <label>Group Name *</label>
+                <input
+                  type="text"
+                  value={groupData.name}
+                  onChange={(e) => setGroupData({ ...groupData, name: e.target.value })}
+                  required
+                  placeholder="e.g., Production Servers"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Description</label>
+                <input
+                  type="text"
+                  value={groupData.description}
+                  onChange={(e) => setGroupData({ ...groupData, description: e.target.value })}
+                  placeholder="Optional description"
+                />
+              </div>
+
+              <div className="form-actions">
+                <button type="button" className="btn" onClick={() => setShowGroupModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Create Group
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -128,6 +254,19 @@ function Dashboard() {
                   required
                   placeholder="https://your-zima.example.com"
                 />
+              </div>
+
+              <div className="form-group">
+                <label>Group</label>
+                <select
+                  value={formData.group_id || ''}
+                  onChange={(e) => setFormData({ ...formData, group_id: e.target.value ? parseInt(e.target.value) : null })}
+                >
+                  <option value="">Ungrouped</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="form-group">

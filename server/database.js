@@ -5,6 +5,13 @@ const db = new Database(path.join(__dirname, '../data/monitor.db'));
 
 // Create tables
 db.exec(`
+  CREATE TABLE IF NOT EXISTS groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS resources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -13,7 +20,9 @@ db.exec(`
     check_interval INTEGER DEFAULT 60000,
     timeout INTEGER DEFAULT 5000,
     enabled INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    group_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS checks (
@@ -39,14 +48,20 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_checks_resource_id ON checks(resource_id);
   CREATE INDEX IF NOT EXISTS idx_checks_checked_at ON checks(checked_at);
   CREATE INDEX IF NOT EXISTS idx_incidents_resource_id ON incidents(resource_id);
+  CREATE INDEX IF NOT EXISTS idx_resources_group_id ON resources(group_id);
 `);
 
-// Lightweight migration: add details column for per-check metadata if missing
+// Lightweight migrations
 try {
   db.prepare("ALTER TABLE checks ADD COLUMN details TEXT").run();
-  // Column added
 } catch (err) {
-  // Ignore if the column already exists
+  // Column already exists
+}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN group_id INTEGER").run();
+} catch (err) {
+  // Column already exists
 }
 
 module.exports = db;
