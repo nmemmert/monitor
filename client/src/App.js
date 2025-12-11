@@ -12,6 +12,7 @@ function Dashboard() {
   const [groups, setGroups] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
@@ -77,17 +78,19 @@ function Dashboard() {
 
   const handleEditResource = async (id) => {
     try {
-      await axios.put(`/api/resources/${id}`, {
-        ...resources.find(r => r.id === id),
-        ...editData,
-      });
-      setEditingId(null);
+      await axios.put(`/api/resources/${id}`, editData);
+      setShowEditModal(false);
       setEditData({});
       loadResources();
     } catch (error) {
       console.error('Error updating resource:', error);
       alert('Error updating resource');
     }
+  };
+
+  const openEditModal = (resource) => {
+    setEditData(resource);
+    setShowEditModal(true);
   };
 
   const handleDeleteResource = async (id) => {
@@ -190,27 +193,10 @@ function Dashboard() {
           </div>
         </div>
 
-        {isEditing ? (
-          <div className="card-edit-form">
-            <div className="edit-field">
-              <label>Check Interval (ms)</label>
-              <input type="number" value={editData.check_interval || resource.check_interval} onChange={(e) => setEditData({ ...editData, check_interval: parseInt(e.target.value) })} onClick={(e) => e.stopPropagation()} />
-            </div>
-            <div className="edit-field">
-              <label>Timeout (ms)</label>
-              <input type="number" value={editData.timeout || resource.timeout} onChange={(e) => setEditData({ ...editData, timeout: parseInt(e.target.value) })} onClick={(e) => e.stopPropagation()} />
-            </div>
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <button className="btn btn-sm btn-primary" onClick={(e) => { e.stopPropagation(); handleEditResource(resource.id); }}>Save</button>
-              <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setEditingId(null); }}>Cancel</button>
-            </div>
-          </div>
-        ) : (
-          <div className="card-actions">
-            <button className="btn-icon" title="Edit" onClick={(e) => { e.stopPropagation(); setEditingId(resource.id); setEditData(resource); }}>✎</button>
-            <button className="btn-icon" title="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteResource(resource.id); }}>🗑</button>
-          </div>
-        )}
+        <div className="card-actions">
+          <button className="btn-icon" title="Edit" onClick={(e) => { e.stopPropagation(); openEditModal(resource); }}>✎</button>
+          <button className="btn-icon" title="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteResource(resource.id); }}>🗑</button>
+        </div>
 
         {!isEditing && resource.lastCheck && (
           <p className="last-check">
@@ -485,6 +471,158 @@ function Dashboard() {
                 </button>
                 <button type="submit" className="btn btn-primary">
                   Add Resource
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showEditModal && (
+        <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Edit Resource</h2>
+            <form onSubmit={(e) => { e.preventDefault(); handleEditResource(editData.id); }}>
+              <div className="form-group">
+                <label>Resource Name *</label>
+                <input
+                  type="text"
+                  value={editData.name || ''}
+                  onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                  required
+                  placeholder="e.g., Production API"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>URL/Address *</label>
+                <input
+                  type="text"
+                  value={editData.url || ''}
+                  onChange={(e) => setEditData({ ...editData, url: e.target.value })}
+                  required
+                  placeholder="e.g., https://api.example.com"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Check Type *</label>
+                <select value={editData.type || 'http'} onChange={(e) => setEditData({ ...editData, type: e.target.value })}>
+                  <option value="http">HTTP</option>
+                  <option value="https">HTTPS</option>
+                  <option value="tcp">TCP</option>
+                  <option value="dns">DNS</option>
+                  <option value="ping">Ping</option>
+                  <option value="health">Health API</option>
+                  <option value="tls">TLS Certificate</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Check Interval (ms)</label>
+                <input
+                  type="number"
+                  value={editData.check_interval || 60000}
+                  onChange={(e) => setEditData({ ...editData, check_interval: parseInt(e.target.value) })}
+                  min="10000"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Timeout (ms)</label>
+                <input
+                  type="number"
+                  value={editData.timeout || 5000}
+                  onChange={(e) => setEditData({ ...editData, timeout: parseInt(e.target.value) })}
+                  min="1000"
+                />
+              </div>
+
+              {(editData.type === 'http' || editData.type === 'https' || editData.type === 'health') && (
+                <>
+                  <div className="form-group">
+                    <label>Keyword to Match (optional)</label>
+                    <input
+                      type="text"
+                      value={editData.http_keyword || ''}
+                      onChange={(e) => setEditData({ ...editData, http_keyword: e.target.value })}
+                      placeholder="Text that must appear in response"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Custom Headers (JSON, optional)</label>
+                    <textarea
+                      value={editData.http_headers || ''}
+                      onChange={(e) => setEditData({ ...editData, http_headers: e.target.value })}
+                      placeholder='{"Authorization": "Bearer token"}'
+                      rows="2"
+                    />
+                  </div>
+                </>
+              )}
+
+              {editData.type === 'tls' && (
+                <div className="form-group">
+                  <label>Certificate Expiry Warning (days)</label>
+                  <input
+                    type="number"
+                    value={editData.cert_expiry_days || 30}
+                    onChange={(e) => setEditData({ ...editData, cert_expiry_days: parseInt(e.target.value) })}
+                    min="1"
+                    max="90"
+                  />
+                </div>
+              )}
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Quiet Hours Start (optional)</label>
+                  <input
+                    type="time"
+                    value={editData.quiet_hours_start || ''}
+                    onChange={(e) => setEditData({ ...editData, quiet_hours_start: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Quiet Hours End (optional)</label>
+                  <input
+                    type="time"
+                    value={editData.quiet_hours_end || ''}
+                    onChange={(e) => setEditData({ ...editData, quiet_hours_end: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>SLA Target (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={editData.sla_target || 99.9}
+                  onChange={(e) => setEditData({ ...editData, sla_target: parseFloat(e.target.value) })}
+                  min="0"
+                  max="100"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Alert Email Address (Optional)</label>
+                <input
+                  type="email"
+                  placeholder="user@example.com (leave empty to use global setting)"
+                  value={editData.email_to || ''}
+                  onChange={(e) => setEditData({ ...editData, email_to: e.target.value })}
+                />
+              </div>
+
+              <div className="form-actions">
+                <button type="button" className="btn" onClick={() => setShowEditModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Save Changes
                 </button>
               </div>
             </form>
