@@ -17,7 +17,8 @@ function SLA() {
     setError(null);
     try {
       const response = await axios.get('/api/sla', { params: { days } });
-      setSlaData(response.data || []);
+      const data = Array.isArray(response.data) ? response.data : [];
+      setSlaData(data);
       setLoading(false);
     } catch (error) {
       console.error('Error loading SLA data:', error);
@@ -41,7 +42,7 @@ function SLA() {
   if (loading) return <div className="container">Loading SLA data...</div>;
   if (error) return <div className="container">Error loading SLA data: {error}</div>;
 
-  const overallStats = slaData.length > 0 ? {
+  const overallStats = slaData && Array.isArray(slaData) && slaData.length > 0 ? {
     totalResources: slaData.length,
     meetingTarget: slaData.filter(s => s.meets_target).length,
     avgUptime: (slaData.reduce((sum, s) => sum + parseFloat(s.actual_uptime), 0) / slaData.length).toFixed(2),
