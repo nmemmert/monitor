@@ -129,11 +129,14 @@ class NotificationService {
       `;
 
       if (stats) {
+        const uptimePct = Number(stats.uptime);
+        const avgMs = Number(stats.avgResponseTime);
+
         htmlContent += `
           <div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 5px;">
             <h3 style="margin-top: 0;">Last 24 Hours Performance</h3>
-            <p><strong>Uptime:</strong> ${(stats.uptime * 100).toFixed(2)}%</p>
-            <p><strong>Avg Response Time:</strong> ${stats.avgResponseTime.toFixed(0)}ms</p>
+            <p><strong>Uptime:</strong> ${Number.isFinite(uptimePct) ? (uptimePct * 100).toFixed(2) : 'N/A'}%</p>
+            <p><strong>Avg Response Time:</strong> ${Number.isFinite(avgMs) ? avgMs.toFixed(0) : 'N/A'}ms</p>
             <p><strong>Last Check:</strong> ${stats.lastCheck || 'Never'}</p>
         `;
 
