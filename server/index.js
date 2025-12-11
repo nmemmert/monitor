@@ -395,7 +395,12 @@ app.use(express.static(path.join(__dirname, '../client/build'), {
   }
 }));
 
-app.get('*', (req, res) => {
+// Only serve index.html for non-file routes (no extension)
+app.get('*', (req, res, next) => {
+  // If the request has a file extension, let static middleware handle it or 404
+  if (path.extname(req.path)) {
+    return next();
+  }
   res.sendFile(path.join(__dirname, '../client/build/index.html'));
 });
 
