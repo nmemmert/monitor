@@ -172,6 +172,33 @@ docker build -t resource-monitor .
 docker run -d -p 3001:3001 -v ./data:/app/data --name monitor resource-monitor
 ```
 
+### Deployment Workflow (Critical!)
+
+**⚠️ IMPORTANT: Always use `npm run build:commit` when deploying changes:**
+
+```bash
+# Make your code changes
+npm run build:commit  # This builds React AND commits the build files to git
+# Or manually:
+npm run build
+git add -f client/build/
+git commit -m "Update build files"
+git push
+
+# Then on remote server:
+cd /opt/resource-monitor
+git pull
+pm2 restart monitor
+# Hard-refresh browser (Ctrl+Shift+R) to clear cache
+```
+
+**Why?** The React build creates new bundle file hashes each time. If you don't commit the build files:
+- ❌ Old cached HTML points to old JS bundle hashes
+- ❌ New JS files aren't in git, so remote server gets old builds
+- ❌ White screen / script loading errors
+
+**Solution:** Always commit build files to git before deploying!
+
 ### Running as a Service (Keep it Running)
 
 **Linux (systemd):**

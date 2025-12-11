@@ -9,6 +9,7 @@
     "server": "nodemon server/index.js",
     "client": "cd client && npm start",
     "build": "cd client && npm run build",
+    "build:commit": "npm run build && git add -f client/build/ && git commit -m 'Auto-commit built React app' && git push",
     "install-all": "npm install && cd client && npm install"
   },
   "keywords": ["monitoring", "uptime", "alerts", "dashboard"],
