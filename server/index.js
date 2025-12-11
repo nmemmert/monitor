@@ -276,15 +276,24 @@ TIMEOUT=${timeout}
   }
 });
 
-// Get historical check data for a resource
+// Get historical check data for a resource (paginated)
 app.get('/api/resources/:id/history', (req, res) => {
   const { id } = req.params;
-  const { days = 7 } = req.query;
+  const { days = 7, page = 1, limit = 100 } = req.query;
+  const pageNum = Math.max(1, parseInt(page));
+  const pageLimit = Math.min(500, Math.max(10, parseInt(limit)));
+  const offset = (pageNum - 1) * pageLimit;
 
   const resource = db.prepare('SELECT * FROM resources WHERE id = ?').get(id);
   if (!resource) {
     return res.status(404).json({ error: 'Resource not found' });
   }
+
+  // Get total count
+  const countResult = db.prepare(`
+    SELECT COUNT(*) as total FROM checks
+    WHERE resource_id = ? AND checked_at > datetime('now', ?)
+  `).get(id, `-${days} days`);
 
   const checks = db.prepare(`
     SELECT 
@@ -297,44 +306,61 @@ app.get('/api/resources/:id/history', (req, res) => {
       checked_at
     FROM checks
     WHERE resource_id = ? AND checked_at > datetime('now', ?)
-    ORDER BY checked_at ASC
-  `).all(id, `-${days} days`);
+    ORDER BY checked_at DESC
+    LIMIT ? OFFSET ?
+  `).all(id, `-${days} days`, pageLimit, offset);
 
   res.json({
     resource,
-    checks,
-    count: checks.length,
+    checks: checks.reverse(), // Reverse to get ASC order for charting
+    pagination: {
+      page: pageNum,
+      limit: pageLimit,
+      total: countResult.total,
+      totalPages: Math.ceil(countResult.total / pageLimit),
+    },
   });
 });
 
-// Get all resources' check history for dashboard
+// Get all resources' check history for dashboard (optimized with aggregation)
 app.get('/api/history/overview', (req, res) => {
-  const { days = 7 } = req.query;
+  const { days = 7, limit = 12 } = req.query; // Only return last 12 checks per resource for charting
 
   const resources = db.prepare('SELECT * FROM resources WHERE enabled = 1 ORDER BY name').all();
   
   const overview = resources.map(resource => {
-    const checks = db.prepare(`
+    // Use aggregation query to get stats without loading all rows
+    const stats = db.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) as up_count,
+        AVG(response_time) as avg_response,
+        MIN(response_time) as min_response,
+        MAX(response_time) as max_response
+      FROM checks
+      WHERE resource_id = ? AND checked_at > datetime('now', ?)
+    `).get(resource.id, `-${days} days`);
+
+    const uptime = stats.total > 0 ? (stats.up_count / stats.total * 100) : 0;
+    const avgResponseTime = stats.avg_response || 0;
+
+    // Only load recent checks for sparklines
+    const recentChecks = db.prepare(`
       SELECT 
         status,
         response_time,
         checked_at
       FROM checks
       WHERE resource_id = ? AND checked_at > datetime('now', ?)
-      ORDER BY checked_at ASC
-    `).all(resource.id, `-${days} days`);
-
-    const upCount = checks.filter(c => c.status === 'up').length;
-    const uptime = checks.length > 0 ? (upCount / checks.length * 100) : 0;
-    const avgResponseTime = checks.length > 0 
-      ? checks.reduce((sum, c) => sum + (c.response_time || 0), 0) / checks.length 
-      : 0;
+      ORDER BY checked_at DESC
+      LIMIT ?
+    `).all(resource.id, `-${days} days`, parseInt(limit));
 
     return {
       id: resource.id,
       name: resource.name,
       type: resource.type,
-      checks,
+      checks: recentChecks.reverse(), // For charting in chronological order
       uptime: uptime.toFixed(2),
       avgResponseTime: avgResponseTime.toFixed(0),
     };

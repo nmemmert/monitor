@@ -57,7 +57,9 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_checks_resource_id ON checks(resource_id);
   CREATE INDEX IF NOT EXISTS idx_checks_checked_at ON checks(checked_at);
+  CREATE INDEX IF NOT EXISTS idx_checks_resource_checked ON checks(resource_id, checked_at DESC);
   CREATE INDEX IF NOT EXISTS idx_incidents_resource_id ON incidents(resource_id);
+  CREATE INDEX IF NOT EXISTS idx_incidents_resolved ON incidents(resource_id, resolved_at);
   CREATE INDEX IF NOT EXISTS idx_resources_group_id ON resources(group_id);
 `);
 
