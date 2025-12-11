@@ -48,6 +48,33 @@ curl -fsSL https://raw.githubusercontent.com/nmemmert/monitor/main/install-ubunt
 Open your browser and go to:
 ```
 http://your-ubuntu-server-ip:3001
+
+## Off-Box Build Workflow (Recommended for low-power servers)
+
+If your server cannot build the React frontend, build locally on your development machine and deploy the prebuilt assets:
+
+1. Build locally on Windows:
+   ```powershell
+   cd c:\Users\NateEmmert\mon
+   npm run build
+   git add -f client/build/
+   git commit -m "Include prebuilt client/build for deployment"
+   git push origin main
+   ```
+
+2. Update server without building:
+   ```bash
+   ssh root@<server-ip>
+   cd /opt/resource-monitor
+   git pull origin main
+   pm2 restart resource-monitor
+   pm2 logs resource-monitor --lines 100
+   ```
+
+3. Verify:
+   - Open `http://<server-ip>:3001`
+   - API responds: `curl http://localhost:3001/api/dashboard | head -c 500`
+   - Logs show DB migration messages (e.g., email_to column)
 ```
 
 You can find your server IP by running on Ubuntu:
