@@ -49,6 +49,18 @@ class NotificationService {
   }
 
   async sendAlert(resource, incident, stats = null) {
+    // Check if incident is acknowledged
+    if (incident.acknowledged) {
+      console.log(`Incident ${incident.id} already acknowledged, skipping alert`);
+      return;
+    }
+
+    // Check quiet hours
+    if (this.isQuietHours(resource)) {
+      console.log(`Resource ${resource.name} is in quiet hours, skipping alert`);
+      return;
+    }
+
     const isDown = incident.type === 'started';
     const statusEmoji = isDown ? '🔴' : '🟢';
     const statusText = isDown ? 'DOWN' : 'UP';
@@ -66,6 +78,28 @@ class NotificationService {
     }
 
     await Promise.allSettled(promises);
+  }
+
+  isQuietHours(resource) {
+    if (!resource.quiet_hours_start || !resource.quiet_hours_end) {
+      return false;
+    }
+
+    const now = new Date();
+    const currentTime = now.getHours() * 60 + now.getMinutes();
+    
+    const [startHour, startMin] = resource.quiet_hours_start.split(':').map(Number);
+    const [endHour, endMin] = resource.quiet_hours_end.split(':').map(Number);
+    
+    const startTime = startHour * 60 + startMin;
+    const endTime = endHour * 60 + endMin;
+
+    // Handle overnight quiet hours
+    if (startTime > endTime) {
+      return currentTime >= startTime || currentTime < endTime;
+    }
+    
+    return currentTime >= startTime && currentTime < endTime;
   }
 
   async sendEmail(resource, message, type, stats = null) {

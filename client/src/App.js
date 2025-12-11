@@ -5,6 +5,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import './App.css';
 import SettingsWizard from './SettingsWizard';
 import History from './History';
+import SLA from './SLA';
 
 function Dashboard() {
   const [resources, setResources] = useState([]);
@@ -21,6 +22,12 @@ function Dashboard() {
     check_interval: 60000,
     timeout: 5000,
     group_id: null,
+    http_keyword: '',
+    http_headers: '',
+    quiet_hours_start: '',
+    quiet_hours_end: '',
+    cert_expiry_days: 30,
+    sla_target: 99.9,
   });
   const [groupData, setGroupData] = useState({ name: '', description: '' });
   const navigate = useNavigate();
@@ -392,6 +399,75 @@ function Dashboard() {
                 />
               </div>
 
+              {(formData.type === 'http' || formData.type === 'https' || formData.type === 'health') && (
+                <>
+                  <div className="form-group">
+                    <label>Keyword to Match (optional)</label>
+                    <input
+                      type="text"
+                      value={formData.http_keyword}
+                      onChange={(e) => setFormData({ ...formData, http_keyword: e.target.value })}
+                      placeholder="Text that must appear in response"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Custom Headers (JSON, optional)</label>
+                    <textarea
+                      value={formData.http_headers}
+                      onChange={(e) => setFormData({ ...formData, http_headers: e.target.value })}
+                      placeholder='{"Authorization": "Bearer token"}'
+                      rows="2"
+                    />
+                  </div>
+                </>
+              )}
+
+              {formData.type === 'tls' && (
+                <div className="form-group">
+                  <label>Certificate Expiry Warning (days)</label>
+                  <input
+                    type="number"
+                    value={formData.cert_expiry_days}
+                    onChange={(e) => setFormData({ ...formData, cert_expiry_days: parseInt(e.target.value) })}
+                    min="1"
+                    max="90"
+                  />
+                </div>
+              )}
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Quiet Hours Start (optional)</label>
+                  <input
+                    type="time"
+                    value={formData.quiet_hours_start}
+                    onChange={(e) => setFormData({ ...formData, quiet_hours_start: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Quiet Hours End (optional)</label>
+                  <input
+                    type="time"
+                    value={formData.quiet_hours_end}
+                    onChange={(e) => setFormData({ ...formData, quiet_hours_end: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>SLA Target (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={formData.sla_target}
+                  onChange={(e) => setFormData({ ...formData, sla_target: parseFloat(e.target.value) })}
+                  min="0"
+                  max="100"
+                />
+              </div>
+
               <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowModal(false)}>
                   Cancel
@@ -588,6 +664,7 @@ function Navbar() {
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
             <Link to="/" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>Dashboard</Link>
             <Link to="/history" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>History</Link>
+            <Link to="/sla" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>SLA</Link>
             <Link to="/settings" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               Settings
               {!notificationsConfigured && (
@@ -623,6 +700,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/resource/:id" element={<ResourceDetail />} />
           <Route path="/history" element={<History />} />
+          <Route path="/sla" element={<SLA />} />
           <Route path="/settings" element={<div className="container"><SettingsWizard /></div>} />
         </Routes>
       </div>

@@ -65,19 +65,41 @@ class MonitorService {
   async checkHttp(resource, startTime, base) {
     let result = { ...base };
     try {
+      const headers = {};
+      if (resource.http_headers) {
+        try {
+          const customHeaders = JSON.parse(resource.http_headers);
+          Object.assign(headers, customHeaders);
+        } catch (e) {
+          // Invalid JSON, skip custom headers
+        }
+      }
+
       const response = await axios.get(resource.url, {
         timeout: resource.timeout,
         validateStatus: () => true,
         maxRedirects: 5,
+        headers,
       });
       const responseTime = Date.now() - startTime;
       const isUp = response.status >= 200 && response.status < 400;
+      
+      // Check for keyword if specified
+      let keywordMatch = true;
+      if (resource.http_keyword && response.data) {
+        const dataStr = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+        keywordMatch = dataStr.includes(resource.http_keyword);
+        if (!keywordMatch) {
+          result.error_message = `Keyword "${resource.http_keyword}" not found in response`;
+        }
+      }
+
       result = {
         ...result,
-        status: isUp ? 'up' : 'down',
+        status: (isUp && keywordMatch) ? 'up' : 'down',
         response_time: responseTime,
         status_code: response.status,
-        error_message: isUp ? null : `HTTP ${response.status}`,
+        error_message: isUp && keywordMatch ? null : (result.error_message || `HTTP ${response.status}`),
       };
     } catch (error) {
       result.error_message = error.message;
@@ -123,6 +145,10 @@ class MonitorService {
         const expires = new Date(cert.valid_to).getTime();
         const daysRemaining = Math.round((expires - now) / (1000 * 60 * 60 * 24));
         const validHost = cert.subjectaltname ? cert.subjectaltname.includes(host) : true;
+        
+        // Check certificate expiry threshold
+        const expiryThreshold = resource.cert_expiry_days || 30;
+        const certExpiringWarning = daysRemaining <= expiryThreshold && daysRemaining > 0;
 
         const status = daysRemaining > 0 && validHost ? 'up' : 'down';
         resolve({
@@ -130,12 +156,15 @@ class MonitorService {
           status,
           response_time: Date.now() - startTime,
           error_message: status === 'up' ? null : 'TLS invalid or expired',
+          cert_expiry_date: cert.valid_to,
           details: JSON.stringify({
             issuer: cert.issuer?.CN,
             subject: cert.subject?.CN,
             valid_to: cert.valid_to,
             days_remaining: daysRemaining,
             host_matches: validHost,
+            cert_expiring_soon: certExpiringWarning,
+            expiry_threshold: expiryThreshold,
           }),
         });
         socket.end();

@@ -42,7 +42,17 @@ db.exec(`
     started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     resolved_at DATETIME,
     notified INTEGER DEFAULT 0,
+    acknowledged INTEGER DEFAULT 0,
+    acknowledged_at DATETIME,
+    acknowledged_by TEXT,
     FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    value TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE INDEX IF NOT EXISTS idx_checks_resource_id ON checks(resource_id);
@@ -63,5 +73,45 @@ try {
 } catch (err) {
   // Column already exists
 }
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN http_keyword TEXT").run();
+} catch (err) {}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN http_headers TEXT").run();
+} catch (err) {}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN quiet_hours_start TEXT").run();
+} catch (err) {}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN quiet_hours_end TEXT").run();
+} catch (err) {}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN cert_expiry_days INTEGER DEFAULT 30").run();
+} catch (err) {}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN sla_target REAL DEFAULT 99.9").run();
+} catch (err) {}
+
+try {
+  db.prepare("ALTER TABLE incidents ADD COLUMN acknowledged INTEGER DEFAULT 0").run();
+} catch (err) {}
+
+try {
+  db.prepare("ALTER TABLE incidents ADD COLUMN acknowledged_at DATETIME").run();
+} catch (err) {}
+
+try {
+  db.prepare("ALTER TABLE incidents ADD COLUMN acknowledged_by TEXT").run();
+} catch (err) {}
+
+try {
+  db.prepare("ALTER TABLE checks ADD COLUMN cert_expiry_date TEXT").run();
+} catch (err) {}
 
 module.exports = db;

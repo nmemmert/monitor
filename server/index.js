@@ -72,15 +72,15 @@ app.get('/api/resources/:id', (req, res) => {
 
 // Create resource
 app.post('/api/resources', (req, res) => {
-  const { name, url, type, check_interval, timeout, group_id } = req.body;
+  const { name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target } = req.body;
 
   if (!name || !url) {
     return res.status(400).json({ error: 'Name and URL are required' });
   }
 
   const stmt = db.prepare(`
-    INSERT INTO resources (name, url, type, check_interval, timeout, group_id)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
@@ -89,7 +89,13 @@ app.post('/api/resources', (req, res) => {
     type || 'http',
     check_interval || 60000,
     timeout || 5000,
-    group_id || null
+    group_id || null,
+    http_keyword || null,
+    http_headers || null,
+    quiet_hours_start || null,
+    quiet_hours_end || null,
+    cert_expiry_days || 30,
+    sla_target || 99.9
   );
 
   res.json({ id: result.lastInsertRowid, message: 'Resource created' });
@@ -97,15 +103,30 @@ app.post('/api/resources', (req, res) => {
 
 // Update resource
 app.put('/api/resources/:id', (req, res) => {
-  const { name, url, type, check_interval, timeout, enabled, group_id } = req.body;
+  const { name, url, type, check_interval, timeout, enabled, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target } = req.body;
 
   const stmt = db.prepare(`
     UPDATE resources 
-    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?
+    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?, http_keyword = ?, http_headers = ?, quiet_hours_start = ?, quiet_hours_end = ?, cert_expiry_days = ?, sla_target = ?
     WHERE id = ?
   `);
 
-  stmt.run(name, url, type, check_interval, timeout, enabled ? 1 : 0, group_id || null, req.params.id);
+  stmt.run(
+    name, 
+    url, 
+    type, 
+    check_interval, 
+    timeout, 
+    enabled ? 1 : 0, 
+    group_id || null,
+    http_keyword || null,
+    http_headers || null,
+    quiet_hours_start || null,
+    quiet_hours_end || null,
+    cert_expiry_days || 30,
+    sla_target || 99.9,
+    req.params.id
+  );
   res.json({ message: 'Resource updated' });
 });
 
@@ -320,6 +341,68 @@ app.get('/api/history/overview', (req, res) => {
   });
 
   res.json(overview);
+});
+
+// Acknowledge incident
+app.post('/api/incidents/:id/acknowledge', (req, res) => {
+  const { id } = req.params;
+  const { acknowledged_by } = req.body;
+
+  const stmt = db.prepare(`
+    UPDATE incidents 
+    SET acknowledged = 1, acknowledged_at = datetime('now'), acknowledged_by = ?
+    WHERE id = ? AND resolved_at IS NULL
+  `);
+
+  const result = stmt.run(acknowledged_by || 'User', id);
+  
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Incident not found or already resolved' });
+  }
+
+  res.json({ message: 'Incident acknowledged' });
+});
+
+// Get SLA report
+app.get('/api/sla', (req, res) => {
+  const { days = 30 } = req.query;
+  
+  const resources = db.prepare('SELECT * FROM resources WHERE enabled = 1').all();
+  
+  const slaData = resources.map(resource => {
+    const checks = db.prepare(`
+      SELECT status 
+      FROM checks 
+      WHERE resource_id = ? AND checked_at > datetime('now', ?)
+    `).all(resource.id, `-${days} days`);
+
+    const upCount = checks.filter(c => c.status === 'up').length;
+    const actualUptime = checks.length > 0 ? (upCount / checks.length * 100) : 0;
+    const target = resource.sla_target || 99.9;
+    const meetsTarget = actualUptime >= target;
+
+    const incidents = db.prepare(`
+      SELECT COUNT(*) as count, 
+             SUM(julianday(COALESCE(resolved_at, datetime('now'))) - julianday(started_at)) * 24 * 60 as downtime_minutes
+      FROM incidents
+      WHERE resource_id = ? AND started_at > datetime('now', ?)
+    `).get(resource.id, `-${days} days`);
+
+    return {
+      resource_id: resource.id,
+      resource_name: resource.name,
+      sla_target: target,
+      actual_uptime: actualUptime.toFixed(2),
+      meets_target: meetsTarget,
+      total_checks: checks.length,
+      successful_checks: upCount,
+      incidents: incidents.count || 0,
+      downtime_minutes: Math.round(incidents.downtime_minutes || 0),
+      group_id: resource.group_id,
+    };
+  });
+
+  res.json(slaData);
 });
 
 // Test email
