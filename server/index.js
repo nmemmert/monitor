@@ -513,8 +513,8 @@ app.post('/api/test-email', async (req, res) => {
     await transporter.sendMail({
       from: email_from,
       to: email_to,
-      subject: 'Test Email from Resource Monitor',
-      text: `This is a test email from your Resource Monitor system.\n\nTime: ${new Date().toLocaleString()}\n\nIf you received this, your email notifications are working correctly!`,
+      subject: 'Test Email from SkyWatch',
+      text: `This is a test email from your SkyWatch monitoring system.\n\nTime: ${new Date().toLocaleString()}\n\nIf you received this, your email notifications are working correctly!`,
     });
 
     res.json({ message: 'Test email sent successfully! Check your inbox.' });
@@ -534,7 +534,7 @@ app.post('/api/test-webhook', async (req, res) => {
       resource: 'Test Resource',
       url: 'https://example.com',
       status: 'test',
-      message: 'This is a test webhook from Resource Monitor',
+      message: 'This is a test webhook from SkyWatch',
       timestamp: new Date().toISOString(),
     });
 

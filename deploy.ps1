@@ -1,7 +1,7 @@
-# Deployment Script for Resource Monitor
+# Deployment Script for SkyWatch
 # Run this script to prepare for deployment
 
-Write-Host "🚀 Resource Monitor - Deployment Preparation" -ForegroundColor Cyan
+Write-Host "🚀 SkyWatch - Deployment Preparation" -ForegroundColor Cyan
 Write-Host ""
 
 # Check if we're in the right directory

@@ -1,10 +1,10 @@
 #!/bin/bash
-# Resource Monitor - One-Click Ubuntu Installation Script (Root Compatible)
+# SkyWatch - One-Click Ubuntu Installation Script (Root Compatible)
 # Usage: curl -fsSL https://raw.githubusercontent.com/nmemmert/monitor/main/install-ubuntu-root.sh | bash
 
 set -e
 
-echo "Resource Monitor - Ubuntu Installation"
+echo "SkyWatch - Ubuntu Installation"
 echo "======================================"
 echo ""
 

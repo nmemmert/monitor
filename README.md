@@ -1,4 +1,4 @@
-# Resource Monitor
+# SkyWatch
 
 A comprehensive monitoring system for tracking the uptime and performance of your ZimaOS server and other online resources.
 
@@ -202,16 +202,16 @@ pm2 restart monitor
 ### Running as a Service (Keep it Running)
 
 **Linux (systemd):**
-Create `/etc/systemd/system/resource-monitor.service`:
+Create `/etc/systemd/system/skywatch.service`:
 ```ini
 [Unit]
-Description=Resource Monitor
+Description=SkyWatch
 After=network.target
 
 [Service]
 Type=simple
 User=youruser
-WorkingDirectory=/opt/resource-monitor
+WorkingDirectory=/opt/skywatch
 ExecStart=/usr/bin/node server/index.js
 Restart=always
 Environment=NODE_ENV=production
@@ -261,7 +261,7 @@ sudo ufw allow 3001/tcp
 
 **Windows:**
 ```powershell
-New-NetFirewallRule -DisplayName "Resource Monitor" -Direction Inbound -LocalPort 3001 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "SkyWatch" -Direction Inbound -LocalPort 3001 -Protocol TCP -Action Allow
 ```
 
 ### Reverse Proxy (Optional but Recommended)

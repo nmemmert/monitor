@@ -1,7 +1,7 @@
 {
-  "name": "resource-monitor",
+  "name": "skywatch",
   "version": "1.0.0",
-  "description": "Monitoring system for ZimaOS and other resources with alerts and statistics",
+  "description": "SkyWatch - Infrastructure monitoring and alerting system",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",

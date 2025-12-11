@@ -1,7 +1,7 @@
 #!/bin/bash
-# Deployment Script for Resource Monitor (Linux/Mac)
+# Deployment Script for SkyWatch (Linux/Mac)
 
-echo "🚀 Resource Monitor - Deployment Preparation"
+echo "🚀 SkyWatch - Deployment Preparation"
 echo ""
 
 # Check if we're in the right directory
@@ -86,7 +86,7 @@ sudo nano /etc/systemd/system/resource-monitor.service
 Add:
 ```ini
 [Unit]
-Description=Resource Monitor
+Description=SkyWatch
 After=network.target
 
 [Service]

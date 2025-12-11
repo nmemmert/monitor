@@ -210,7 +210,7 @@ function Dashboard() {
   return (
     <div className="container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h2>Resource Monitor Dashboard</h2>
+        <h2>SkyWatch Dashboard</h2>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button className="btn btn-secondary" onClick={() => setShowGroupModal(true)}>
             + New Group
@@ -809,7 +809,7 @@ function Navbar() {
     <nav className="navbar">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
-          <h1>🔍 Resource Monitor</h1>
+          <h1>🔍 SkyWatch</h1>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
             <Link to="/" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>Dashboard</Link>
             <Link to="/history" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>History</Link>

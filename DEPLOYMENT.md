@@ -19,7 +19,7 @@ git init
 git add .
 
 # Commit
-git commit -m "Initial commit - Resource Monitor"
+git commit -m "Initial commit - SkyWatch"
 
 # Add your GitHub repository
 git remote add origin https://github.com/nmemmert/monitor.git
