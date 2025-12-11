@@ -71,7 +71,15 @@ class NotificationService {
 
     // Use resource-specific email if provided, otherwise fall back to global config
     if (this.emailEnabled && (resource.email_to || this.config.email_to)) {
+      const chosenEmail = resource.email_to || this.config.email_to;
+      console.log(`[Alert] Email target for ${resource.name}: ${chosenEmail || 'none'} (enabled=${this.emailEnabled})`);
       promises.push(this.sendEmail(resource, message, incident.type, stats));
+    } else {
+      if (!this.emailEnabled) {
+        console.log(`[Alert] Email disabled via config; skipping email for ${resource.name}`);
+      } else {
+        console.log(`[Alert] No email target for ${resource.name}; skipping email`);
+      }
     }
 
     if (this.webhookEnabled) {
@@ -105,7 +113,7 @@ class NotificationService {
 
   async sendEmail(resource, message, type, stats = null) {
     if (!this.transporter) {
-      console.error('Email config incomplete; skipping email');
+      console.error(`[Email] Config incomplete; skipping email (enabled=${this.emailEnabled}, host=${this.config.email_host})`);
       return;
     }
 
