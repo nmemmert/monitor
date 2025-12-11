@@ -102,7 +102,14 @@ try {
 
 try {
   db.prepare("ALTER TABLE resources ADD COLUMN email_to TEXT").run();
-} catch (err) {}
+  console.log('[DB] Added email_to column to resources');
+} catch (err) {
+  if (err.message.includes('duplicate')) {
+    console.log('[DB] email_to column already exists');
+  } else {
+    console.error('[DB] Error adding email_to column:', err.message);
+  }
+}
 
 try {
   db.prepare("ALTER TABLE incidents ADD COLUMN acknowledged INTEGER DEFAULT 0").run();
