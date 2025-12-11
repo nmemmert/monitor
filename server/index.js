@@ -72,15 +72,15 @@ app.get('/api/resources/:id', (req, res) => {
 
 // Create resource
 app.post('/api/resources', (req, res) => {
-  const { name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target } = req.body;
+  const { name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to } = req.body;
 
   if (!name || !url) {
     return res.status(400).json({ error: 'Name and URL are required' });
   }
 
   const stmt = db.prepare(`
-    INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
@@ -95,7 +95,8 @@ app.post('/api/resources', (req, res) => {
     quiet_hours_start || null,
     quiet_hours_end || null,
     cert_expiry_days || 30,
-    sla_target || 99.9
+    sla_target || 99.9,
+    email_to || null
   );
 
   res.json({ id: result.lastInsertRowid, message: 'Resource created' });
@@ -103,11 +104,11 @@ app.post('/api/resources', (req, res) => {
 
 // Update resource
 app.put('/api/resources/:id', (req, res) => {
-  const { name, url, type, check_interval, timeout, enabled, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target } = req.body;
+  const { name, url, type, check_interval, timeout, enabled, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to } = req.body;
 
   const stmt = db.prepare(`
     UPDATE resources 
-    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?, http_keyword = ?, http_headers = ?, quiet_hours_start = ?, quiet_hours_end = ?, cert_expiry_days = ?, sla_target = ?
+    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?, http_keyword = ?, http_headers = ?, quiet_hours_start = ?, quiet_hours_end = ?, cert_expiry_days = ?, sla_target = ?, email_to = ?
     WHERE id = ?
   `);
 
@@ -125,6 +126,7 @@ app.put('/api/resources/:id', (req, res) => {
     quiet_hours_end || null,
     cert_expiry_days || 30,
     sla_target || 99.9,
+    email_to || null,
     req.params.id
   );
   res.json({ message: 'Resource updated' });
@@ -324,9 +326,18 @@ app.get('/api/resources/:id/history', (req, res) => {
 
 // Get all resources' check history for dashboard (optimized with aggregation)
 app.get('/api/history/overview', (req, res) => {
-  const { days = 7, limit = 12 } = req.query; // Only return last 12 checks per resource for charting
+  const { days = 7, limit = 12, page = 1, page: pageParam } = req.query;
+  const pageLimit = parseInt(req.query.limit || 10); // Pagination limit (per page)
+  const currentPage = Math.max(1, parseInt(pageParam || page || 1));
+  const offset = (currentPage - 1) * pageLimit;
 
-  const resources = db.prepare('SELECT * FROM resources WHERE enabled = 1 ORDER BY name').all();
+  // Get total count of enabled resources
+  const totalCount = db.prepare('SELECT COUNT(*) as count FROM resources WHERE enabled = 1').get();
+  const total = totalCount.count;
+
+  // Get paginated resources
+  const resources = db.prepare('SELECT * FROM resources WHERE enabled = 1 ORDER BY name LIMIT ? OFFSET ?')
+    .all(pageLimit, offset);
   
   const overview = resources.map(resource => {
     // Use aggregation query to get stats without loading all rows
@@ -366,7 +377,7 @@ app.get('/api/history/overview', (req, res) => {
     };
   });
 
-  res.json(overview);
+  res.json({ resources: overview, total, page: currentPage, limit: pageLimit });
 });
 
 // Acknowledge incident
@@ -391,9 +402,18 @@ app.post('/api/incidents/:id/acknowledge', (req, res) => {
 
 // Get SLA report
 app.get('/api/sla', (req, res) => {
-  const { days = 30 } = req.query;
-  
-  const resources = db.prepare('SELECT * FROM resources WHERE enabled = 1').all();
+  const { days = 30, page = 1, limit = 10 } = req.query;
+  const pageLimit = parseInt(limit);
+  const currentPage = Math.max(1, parseInt(page));
+  const offset = (currentPage - 1) * pageLimit;
+
+  // Get total count
+  const totalCount = db.prepare('SELECT COUNT(*) as count FROM resources WHERE enabled = 1').get();
+  const total = totalCount.count;
+
+  // Get paginated resources
+  const resources = db.prepare('SELECT * FROM resources WHERE enabled = 1 ORDER BY name LIMIT ? OFFSET ?')
+    .all(pageLimit, offset);
   
   const slaData = resources.map(resource => {
     const checks = db.prepare(`
@@ -428,7 +448,7 @@ app.get('/api/sla', (req, res) => {
     };
   });
 
-  res.json(slaData);
+  res.json({ resources: slaData, total, page: currentPage, limit: pageLimit });
 });
 
 // Test email

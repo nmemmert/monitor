@@ -19,14 +19,18 @@ function History() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showAveraged, setShowAveraged] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalItems, setTotalItems] = useState(0);
 
   useEffect(() => {
     const loadHistory = async () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await axios.get('/api/history/overview', { params: { days } });
-        setHistoryData(response.data || []);
+        const response = await axios.get('/api/history/overview', { params: { days, page: currentPage, limit: pageSize } });
+        setHistoryData(response.data.resources || []);
+        setTotalItems(response.data.total || response.data.resources?.length || 0);
         setLoading(false);
       } catch (error) {
         console.error('Error loading history:', error);
@@ -36,7 +40,7 @@ function History() {
     };
 
     loadHistory();
-  }, [days]);
+  }, [days, currentPage, pageSize]);
 
   if (loading) return <div className="container">Loading history...</div>;
   if (error) return <div className="container">Error loading history: {error}</div>;
@@ -172,6 +176,48 @@ function History() {
               </div>
             );
           })}
+
+          {totalItems > pageSize && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '2rem', padding: '1.5rem', background: '#f5f5f5', borderRadius: '8px' }}>
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+              >
+                ← Previous
+              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ color: '#666', fontSize: '0.9rem' }}>Page</span>
+                <input 
+                  type="number" 
+                  value={currentPage} 
+                  onChange={(e) => {
+                    const page = Math.max(1, Math.min(Math.ceil(totalItems / pageSize), parseInt(e.target.value) || 1));
+                    setCurrentPage(page);
+                  }}
+                  style={{ width: '50px', padding: '0.5rem', border: '1px solid #ddd', borderRadius: '4px', textAlign: 'center' }}
+                />
+                <span style={{ color: '#666', fontSize: '0.9rem' }}>of {Math.ceil(totalItems / pageSize)}</span>
+              </div>
+              <select 
+                value={pageSize} 
+                onChange={(e) => { setPageSize(parseInt(e.target.value)); setCurrentPage(1); }}
+                style={{ padding: '0.5rem', border: '1px solid #ddd', borderRadius: '4px', background: '#fff' }}
+              >
+                <option value={5}>5 per page</option>
+                <option value={10}>10 per page</option>
+                <option value={25}>25 per page</option>
+                <option value={50}>50 per page</option>
+              </select>
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setCurrentPage(Math.min(Math.ceil(totalItems / pageSize), currentPage + 1))}
+                disabled={currentPage >= Math.ceil(totalItems / pageSize)}
+              >
+                Next →
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
