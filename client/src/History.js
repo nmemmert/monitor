@@ -18,6 +18,7 @@ function History() {
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showAveraged, setShowAveraged] = useState(false);
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -42,18 +43,29 @@ function History() {
 
   return (
     <div className="container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
         <h2>Monitoring History</h2>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          {[7, 14, 30].map((d) => (
-            <button
-              key={d}
-              className={`btn ${days === d ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setDays(d)}
-            >
-              {d} Days
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {[7, 14, 30].map((d) => (
+              <button
+                key={d}
+                className={`btn ${days === d ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setDays(d)}
+              >
+                {d} Days
+              </button>
+            ))}
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', userSelect: 'none', background: '#f5f5f5', padding: '0.5rem 1rem', borderRadius: '4px', border: '1px solid #ddd' }}>
+            <input
+              type="checkbox"
+              checked={showAveraged}
+              onChange={(e) => setShowAveraged(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            <span>Show Averages</span>
+          </label>
         </div>
       </div>
 
@@ -65,46 +77,63 @@ function History() {
       ) : (
         <div>
           {historyData.map((resource) => {
-            const chartData = prepareChartData(resource.checks || []);
+            const chartData = showAveraged 
+              ? prepareAveragedChartData(resource.checks || [], days)
+              : prepareChartData(resource.checks || []);
 
             return (
-              <div key={resource.id} className="detail-section" style={{ marginBottom: '3rem' }}>
-                <h3 style={{ marginBottom: '0.5rem', color: '#667eea' }}>{resource.name}</h3>
-                <p style={{ color: '#666', marginBottom: '1rem' }}>
-                  Type: <strong>{resource.type}</strong> | Uptime: <strong>{resource.uptime}%</strong> | Avg Response: <strong>{resource.avgResponseTime}ms</strong>
+              <div key={resource.id} className="detail-section" style={{ marginBottom: '3rem', background: '#fff', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+                <h3 style={{ marginBottom: '0.5rem', color: '#667eea', fontSize: '1.5rem' }}>{resource.name}</h3>
+                <p style={{ color: '#666', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+                  <span style={{ marginRight: '1.5rem' }}>Type: <strong style={{ color: '#333' }}>{resource.type.toUpperCase()}</strong></span>
+                  <span style={{ marginRight: '1.5rem' }}>Uptime: <strong style={{ color: resource.uptime >= 95 ? '#4caf50' : resource.uptime >= 80 ? '#ff9800' : '#f44336' }}>{resource.uptime}%</strong></span>
+                  <span>Avg Response: <strong style={{ color: '#333' }}>{resource.avgResponseTime}ms</strong></span>
                 </p>
 
                 {chartData.length > 0 ? (
-                  <div className="chart-container" style={{ height: '360px', marginBottom: '1.5rem' }}>
+                  <div className="chart-container" style={{ height: '400px', marginBottom: '1.5rem', background: '#fafafa', padding: '1rem', borderRadius: '6px' }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 40 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
+                      <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
                         <XAxis
                           dataKey="label"
-                          tick={{ fontSize: 11 }}
+                          tick={{ fontSize: 12, fill: '#666' }}
                           angle={-45}
                           textAnchor="end"
-                          height={70}
+                          height={80}
                         />
-                        <YAxis yAxisId="left" label={{ value: 'ms', angle: -90, position: 'insideLeft' }} />
-                        <YAxis yAxisId="right" orientation="right" domain={[0, 1]} ticks={[0, 1]} />
+                        <YAxis 
+                          yAxisId="left" 
+                          label={{ value: 'Response Time (ms)', angle: -90, position: 'insideLeft', style: { fill: '#666' } }}
+                          tick={{ fontSize: 12, fill: '#666' }}
+                        />
+                        <YAxis 
+                          yAxisId="right" 
+                          orientation="right" 
+                          domain={[0, 1]} 
+                          ticks={[0, 1]} 
+                          tick={{ fontSize: 12, fill: '#666' }}
+                          label={{ value: 'Status', angle: 90, position: 'insideRight', style: { fill: '#666' } }}
+                        />
                         <Tooltip
-                          contentStyle={{ backgroundColor: '#f5f5f5', border: '1px solid #ddd' }}
+                          contentStyle={{ backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}
                           formatter={(value, name) => {
-                            if (name === 'Response Time (ms)') return `${value}ms`;
-                            if (name === 'Status') return value === 1 ? 'UP' : 'DOWN';
+                            if (name === 'Response Time') return `${value}ms`;
+                            if (name === 'Status') return value === 1 ? '✓ UP' : '✗ DOWN';
+                            if (name === 'Uptime %') return `${value}%`;
                             return value;
                           }}
                         />
-                        <Legend />
+                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
                         <Area
                           yAxisId="left"
                           type="monotone"
                           dataKey="responseTime"
                           fill="#667eea"
                           stroke="#667eea"
-                          name="Response Time (ms)"
-                          fillOpacity={0.25}
+                          name="Response Time"
+                          fillOpacity={0.3}
+                          strokeWidth={2}
                           isAnimationActive={false}
                         />
                         <Bar
@@ -112,32 +141,32 @@ function History() {
                           dataKey="statusNumeric"
                           fill="#4caf50"
                           name="Status"
-                          opacity={0.45}
+                          opacity={0.5}
                           isAnimationActive={false}
                         />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 ) : (
-                  <div style={{ color: '#999', padding: '1.5rem', textAlign: 'center' }}>No check data available</div>
+                  <div style={{ color: '#999', padding: '2rem', textAlign: 'center', background: '#fafafa', borderRadius: '6px' }}>No check data available</div>
                 )}
 
-                <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-                  <div className="stat">
-                    <p className="stat-value">{resource.checks?.length || 0}</p>
-                    <p className="stat-label">Total Checks</p>
+                <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                  <div className="stat" style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '6px' }}>
+                    <p className="stat-value" style={{ color: '#667eea', fontSize: '2rem', fontWeight: 'bold' }}>{resource.checks?.length || 0}</p>
+                    <p className="stat-label" style={{ color: '#666', fontSize: '0.9rem' }}>Total Checks</p>
                   </div>
-                  <div className="stat">
-                    <p className="stat-value">{resource.uptime}%</p>
-                    <p className="stat-label">Uptime</p>
+                  <div className="stat" style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '6px' }}>
+                    <p className="stat-value" style={{ color: resource.uptime >= 95 ? '#4caf50' : resource.uptime >= 80 ? '#ff9800' : '#f44336', fontSize: '2rem', fontWeight: 'bold' }}>{resource.uptime}%</p>
+                    <p className="stat-label" style={{ color: '#666', fontSize: '0.9rem' }}>Uptime</p>
                   </div>
-                  <div className="stat">
-                    <p className="stat-value">{resource.avgResponseTime}ms</p>
-                    <p className="stat-label">Avg Response</p>
+                  <div className="stat" style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '6px' }}>
+                    <p className="stat-value" style={{ color: '#667eea', fontSize: '2rem', fontWeight: 'bold' }}>{resource.avgResponseTime}ms</p>
+                    <p className="stat-label" style={{ color: '#666', fontSize: '0.9rem' }}>Avg Response</p>
                   </div>
-                  <div className="stat">
-                    <p className="stat-value">{(resource.checks || []).filter((c) => c.status === 'up').length}/{resource.checks?.length || 0}</p>
-                    <p className="stat-label">Successful Checks</p>
+                  <div className="stat" style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '6px' }}>
+                    <p className="stat-value" style={{ color: '#4caf50', fontSize: '2rem', fontWeight: 'bold' }}>{(resource.checks || []).filter((c) => c.status === 'up').length}/{resource.checks?.length || 0}</p>
+                    <p className="stat-label" style={{ color: '#666', fontSize: '0.9rem' }}>Successful Checks</p>
                   </div>
                 </div>
               </div>
@@ -160,6 +189,75 @@ function prepareChartData(checks) {
       statusNumeric: check.status === 'up' ? 1 : 0,
     };
   });
+}
+
+function prepareAveragedChartData(checks, days) {
+  if (!checks || checks.length === 0) return [];
+  
+  // Determine interval based on days
+  let intervalHours;
+  if (days <= 7) {
+    intervalHours = 1; // Hourly for 7 days
+  } else if (days <= 14) {
+    intervalHours = 3; // Every 3 hours for 14 days
+  } else {
+    intervalHours = 6; // Every 6 hours for 30+ days
+  }
+  
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+  const now = Date.now();
+  const startTime = now - (days * 24 * 60 * 60 * 1000);
+  
+  // Group checks into time buckets
+  const buckets = new Map();
+  
+  checks.forEach(check => {
+    const checkTime = new Date(check.checked_at).getTime();
+    if (checkTime < startTime) return;
+    
+    const bucketKey = Math.floor(checkTime / intervalMs) * intervalMs;
+    
+    if (!buckets.has(bucketKey)) {
+      buckets.set(bucketKey, {
+        checks: [],
+        upCount: 0,
+        totalResponse: 0,
+      });
+    }
+    
+    const bucket = buckets.get(bucketKey);
+    bucket.checks.push(check);
+    if (check.status === 'up') {
+      bucket.upCount++;
+      bucket.totalResponse += check.response_time || 0;
+    }
+  });
+  
+  // Convert buckets to chart data
+  const chartData = Array.from(buckets.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([timestamp, data]) => {
+      const date = new Date(timestamp);
+      const avgResponse = data.upCount > 0 ? Math.round(data.totalResponse / data.upCount) : 0;
+      const uptime = Math.round((data.upCount / data.checks.length) * 100);
+      
+      let label;
+      if (intervalHours === 1) {
+        label = `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      } else {
+        label = `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit' })}`;
+      }
+      
+      return {
+        label,
+        responseTime: avgResponse,
+        statusNumeric: uptime / 100,
+        status: uptime > 50 ? 'up' : 'down',
+        uptime: uptime,
+      };
+    });
+  
+  return chartData;
 }
 
 export default History;
