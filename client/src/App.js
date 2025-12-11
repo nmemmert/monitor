@@ -28,6 +28,7 @@ function Dashboard() {
     quiet_hours_end: '',
     cert_expiry_days: 30,
     sla_target: 99.9,
+    email_to: '',
   });
   const [groupData, setGroupData] = useState({ name: '', description: '' });
   const navigate = useNavigate();
@@ -465,6 +466,16 @@ function Dashboard() {
                   onChange={(e) => setFormData({ ...formData, sla_target: parseFloat(e.target.value) })}
                   min="0"
                   max="100"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Alert Email Address (Optional)</label>
+                <input
+                  type="email"
+                  placeholder="user@example.com (leave empty to use global setting)"
+                  value={formData.email_to || ''}
+                  onChange={(e) => setFormData({ ...formData, email_to: e.target.value })}
                 />
               </div>
 
