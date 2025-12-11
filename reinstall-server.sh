@@ -50,6 +50,10 @@ if [ ! -f ".env" ]; then
     cp .env.example .env 2>/dev/null || echo "NODE_ENV=production" > .env
 fi
 
+# Create data directory if it doesn't exist
+echo "5️⃣  Creating data directory..."
+mkdir -p data
+
 # Start with PM2
 echo "6️⃣  Starting application..."
 pm2 start server/index.js --name resource-monitor
