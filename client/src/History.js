@@ -29,8 +29,23 @@ function History() {
       setError(null);
       try {
         const response = await axios.get('/api/history/overview', { params: { days, page: currentPage, limit: pageSize } });
-        setHistoryData(response.data.resources || []);
-        setTotalItems(response.data.total || response.data.resources?.length || 0);
+        console.log('History API Response:', response.data);
+        
+        let data = [];
+        let total = 0;
+        
+        // Handle both response formats
+        if (response.data.resources && Array.isArray(response.data.resources)) {
+          data = response.data.resources;
+          total = response.data.total || data.length;
+        } else if (Array.isArray(response.data)) {
+          data = response.data;
+          total = data.length;
+        }
+        
+        console.log('Processed history data:', { data, total });
+        setHistoryData(data);
+        setTotalItems(total);
         setLoading(false);
       } catch (error) {
         console.error('Error loading history:', error);
