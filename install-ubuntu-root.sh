@@ -75,7 +75,8 @@ fi
 # Install dependencies
 echo ""
 echo "Step 5: Installing dependencies..."
-npm install --production
+# For low-memory servers, limit memory usage
+NODE_OPTIONS="--max-old-space-size=512" npm install --production --no-optional 2>&1 | tail -50 || npm install --production
 
 # Build client
 echo ""
