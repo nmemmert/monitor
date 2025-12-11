@@ -101,6 +101,10 @@ try {
 } catch (err) {}
 
 try {
+  db.prepare("ALTER TABLE resources ADD COLUMN email_to TEXT").run();
+} catch (err) {}
+
+try {
   db.prepare("ALTER TABLE incidents ADD COLUMN acknowledged INTEGER DEFAULT 0").run();
 } catch (err) {}
 

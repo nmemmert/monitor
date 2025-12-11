@@ -69,7 +69,8 @@ class NotificationService {
 
     const promises = [];
 
-    if (this.emailEnabled) {
+    // Use resource-specific email if provided, otherwise fall back to global config
+    if (this.emailEnabled && (resource.email_to || this.config.email_to)) {
       promises.push(this.sendEmail(resource, message, incident.type, stats));
     }
 
@@ -141,14 +142,17 @@ class NotificationService {
 
       htmlContent += `</div>`;
 
+      // Use resource-specific email if provided, otherwise use global config
+      const emailTo = resource.email_to || this.config.email_to;
+      
       await this.transporter.sendMail({
         from: this.config.email_from,
-        to: this.config.email_to,
+        to: emailTo,
         subject: `Alert: ${resource.name} is ${type === 'started' ? 'DOWN' : 'UP'}`,
         text: message,
         html: htmlContent,
       });
-      console.log(`Email sent for ${resource.name}`);
+      console.log(`Email sent for ${resource.name} to ${emailTo}`);
     } catch (error) {
       console.error('Email error:', error.message);
     }

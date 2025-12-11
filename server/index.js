@@ -7,6 +7,7 @@ const db = require('./database');
 const scheduler = require('./scheduler');
 const monitorService = require('./monitorService');
 const notificationService = require('./notificationService');
+const cache = require('./cache');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -99,6 +100,10 @@ app.post('/api/resources', (req, res) => {
     email_to || null
   );
 
+  // Invalidate related cache entries
+  cache.invalidatePattern('history:');
+  cache.invalidatePattern('sla:');
+
   res.json({ id: result.lastInsertRowid, message: 'Resource created' });
 });
 
@@ -129,12 +134,22 @@ app.put('/api/resources/:id', (req, res) => {
     email_to || null,
     req.params.id
   );
+
+  // Invalidate related cache entries
+  cache.invalidatePattern('history:');
+  cache.invalidatePattern('sla:');
+
   res.json({ message: 'Resource updated' });
 });
 
 // Delete resource
 app.delete('/api/resources/:id', (req, res) => {
   db.prepare('DELETE FROM resources WHERE id = ?').run(req.params.id);
+  
+  // Invalidate related cache entries
+  cache.invalidatePattern('history:');
+  cache.invalidatePattern('sla:');
+  
   res.json({ message: 'Resource deleted' });
 });
 
@@ -331,6 +346,15 @@ app.get('/api/history/overview', (req, res) => {
   const currentPage = Math.max(1, parseInt(pageParam || page || 1));
   const offset = (currentPage - 1) * pageLimit;
 
+  // Create cache key based on query parameters
+  const cacheKey = `history:days=${days}:page=${currentPage}:limit=${pageLimit}`;
+  
+  // Check cache first
+  const cachedResult = cache.get(cacheKey);
+  if (cachedResult) {
+    return res.json(cachedResult);
+  }
+
   // Get total count of enabled resources
   const totalCount = db.prepare('SELECT COUNT(*) as count FROM resources WHERE enabled = 1').get();
   const total = totalCount.count;
@@ -377,7 +401,12 @@ app.get('/api/history/overview', (req, res) => {
     };
   });
 
-  res.json({ resources: overview, total, page: currentPage, limit: pageLimit });
+  const result = { resources: overview, total, page: currentPage, limit: pageLimit };
+  
+  // Cache result for 2 minutes (120 seconds)
+  cache.set(cacheKey, result, 120);
+  
+  res.json(result);
 });
 
 // Acknowledge incident
@@ -406,6 +435,15 @@ app.get('/api/sla', (req, res) => {
   const pageLimit = parseInt(limit);
   const currentPage = Math.max(1, parseInt(page));
   const offset = (currentPage - 1) * pageLimit;
+
+  // Create cache key
+  const cacheKey = `sla:days=${days}:page=${currentPage}:limit=${pageLimit}`;
+  
+  // Check cache first
+  const cachedResult = cache.get(cacheKey);
+  if (cachedResult) {
+    return res.json(cachedResult);
+  }
 
   // Get total count
   const totalCount = db.prepare('SELECT COUNT(*) as count FROM resources WHERE enabled = 1').get();
@@ -448,7 +486,12 @@ app.get('/api/sla', (req, res) => {
     };
   });
 
-  res.json({ resources: slaData, total, page: currentPage, limit: pageLimit });
+  const result = { resources: slaData, total, page: currentPage, limit: pageLimit };
+  
+  // Cache result for 3 minutes (180 seconds)
+  cache.set(cacheKey, result, 180);
+  
+  res.json(result);
 });
 
 // Test email
