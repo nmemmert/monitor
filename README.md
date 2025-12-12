@@ -10,6 +10,8 @@ A comprehensive monitoring system for tracking the uptime and performance of you
 - 📝 **Incident Tracking** - Track when resources go down and recover
 - ⚙️ **Configurable Checks** - Set custom check intervals and timeouts
 - 🗄️ **Historical Data** - 7 days of check history with detailed statistics
+- 🌍 **Timezone Support** - All timestamps automatically display in your local timezone
+- 🐳 **Docker Support** - Pre-built images available on GitHub Container Registry
 
 ## Installation
 
@@ -190,13 +192,27 @@ Docker setup is now fully integrated! See [DOCKER.md](./DOCKER.md) for complete 
 
 Quick start:
 ```bash
-# Local deployment
+# Local deployment with Docker Compose
 docker-compose up -d
 
-# Using pre-built image from GitHub Container Registry
+# Or using pre-built image from GitHub Container Registry
 docker pull ghcr.io/nmemmert/monitor:latest
-docker run -d -p 3001:3001 --env-file .env ghcr.io/nmemmert/monitor:latest
+docker run -d \
+  -p 3001:3001 \
+  --name skywatch \
+  -e PORT=3001 \
+  -e NODE_ENV=production \
+  ghcr.io/nmemmert/monitor:latest
+
+# To add email/webhook notifications, create a .env file and mount it:
+docker run -d \
+  -p 3001:3001 \
+  --name skywatch \
+  --env-file .env \
+  ghcr.io/nmemmert/monitor:latest
 ```
+
+**Note:** The Docker image is automatically built and published to GitHub Container Registry on every push to the main branch.
 
 ### Deployment Workflow (Critical!)
 
@@ -347,21 +363,50 @@ server {
 ## Project Structure
 
 ```
-mon/
+monitor/
 ├── server/              # Backend Node.js/Express
 │   ├── index.js        # Main server file
 │   ├── database.js     # SQLite database setup
 │   ├── monitorService.js
 │   ├── notificationService.js
-│   └── scheduler.js
+│   ├── scheduler.js
+│   └── cache.js
 ├── client/             # React frontend
 │   └── src/
 │       ├── App.js      # Main React component
+│       ├── History.js  # Historical data view
+│       ├── SLA.js      # SLA dashboard
+│       ├── SettingsWizard.js
+│       ├── utils/
+│       │   └── timeUtils.js  # Timezone formatting utilities
 │       └── App.css     # Styles
 ├── data/               # SQLite database (auto-created)
 ├── .env                # Environment configuration
+├── Dockerfile          # Docker image definition
+├── docker-compose.yml  # Docker Compose configuration
 └── package.json
 ```
+
+## Technology Stack
+
+**Backend:**
+- Node.js with Express
+- SQLite (better-sqlite3) for data storage
+- node-cron for scheduled monitoring
+- Axios for HTTP checks
+- Nodemailer for email notifications
+- WebSocket (ws) for real-time updates
+
+**Frontend:**
+- React 19
+- React Router for navigation
+- Recharts for data visualization
+- Axios for API calls
+
+**DevOps:**
+- Docker with multi-stage builds
+- GitHub Actions for CI/CD
+- GitHub Container Registry (GHCR) for image hosting
 
 ## Configuration
 
