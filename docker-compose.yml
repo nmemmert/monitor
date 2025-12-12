@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  skywatch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: skywatch-monitor
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    env_file:
+      - .env
+    volumes:
+      - skywatch-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/api/groups"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  skywatch-data:
+    driver: local

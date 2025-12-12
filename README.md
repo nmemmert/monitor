@@ -27,6 +27,40 @@ The script will:
 - ✅ Set up auto-start on boot
 - ✅ Guide you through email/webhook setup
 
+### Docker Installation (Recommended)
+
+The easiest way to get SkyWatch running with Docker:
+
+#### Prerequisites
+- Docker and Docker Compose
+
+#### Setup
+
+1. Clone the repository:
+```bash
+git clone https://github.com/nmemmert/monitor.git
+cd monitor
+```
+
+2. Create and configure your `.env` file:
+```bash
+cp .env.example .env
+# Edit .env with your settings
+```
+
+3. Start with Docker Compose:
+```bash
+docker-compose up -d
+```
+
+The application will be available at `http://localhost:3001`
+
+See [DOCKER.md](./DOCKER.md) for detailed Docker documentation including:
+- Building images locally
+- Pushing to Docker registries
+- Running with custom ports
+- Health checks and monitoring
+
 ### Manual Installation
 
 #### Prerequisites
@@ -150,26 +184,18 @@ nano .env  # Configure your settings
 npm start
 ```
 
-### Option 3: Docker Deployment (Advanced)
+### Option 3: Docker Deployment (Recommended)
 
-Create `Dockerfile` in project root:
-```dockerfile
-FROM node:18
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-WORKDIR /app/client
-RUN npm install && npm run build
-WORKDIR /app
-EXPOSE 3001
-CMD ["node", "server/index.js"]
-```
+Docker setup is now fully integrated! See [DOCKER.md](./DOCKER.md) for complete documentation.
 
-Then deploy:
+Quick start:
 ```bash
-docker build -t resource-monitor .
-docker run -d -p 3001:3001 -v ./data:/app/data --name monitor resource-monitor
+# Local deployment
+docker-compose up -d
+
+# Using pre-built image from GitHub Container Registry
+docker pull ghcr.io/nmemmert/monitor:latest
+docker run -d -p 3001:3001 --env-file .env ghcr.io/nmemmert/monitor:latest
 ```
 
 ### Deployment Workflow (Critical!)
