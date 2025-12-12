@@ -12,6 +12,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import './App.css';
+import { formatChartTime } from './utils/timeUtils';
 
 function History() {
   const [historyData, setHistoryData] = useState([]);
@@ -241,8 +242,7 @@ function History() {
 
 function prepareChartData(checks) {
   return checks.map((check) => {
-    const date = new Date(check.checked_at);
-    const label = `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const label = formatChartTime(check.checked_at);
     return {
       label,
       responseTime: check.response_time || 0,
@@ -298,16 +298,10 @@ function prepareAveragedChartData(checks, days) {
   const chartData = Array.from(buckets.entries())
     .sort((a, b) => a[0] - b[0])
     .map(([timestamp, data]) => {
-      const date = new Date(timestamp);
       const avgResponse = data.upCount > 0 ? Math.round(data.totalResponse / data.upCount) : 0;
       const uptime = Math.round((data.upCount / data.checks.length) * 100);
       
-      let label;
-      if (intervalHours === 1) {
-        label = `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-      } else {
-        label = `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit' })}`;
-      }
+      const label = formatChartTime(timestamp);
       
       return {
         label,

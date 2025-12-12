@@ -6,6 +6,7 @@ import './App.css';
 import SettingsWizard from './SettingsWizard';
 import History from './History';
 import SLA from './SLA';
+import { formatLocalTime, formatLocalTimeOnly, formatChartTime } from './utils/timeUtils';
 
 function Dashboard() {
   const [resources, setResources] = useState([]);
@@ -200,7 +201,7 @@ function Dashboard() {
 
         {!isEditing && resource.lastCheck && (
           <p className="last-check">
-            Last: {new Date(resource.lastCheck).toLocaleString()}
+            Last: {formatLocalTime(resource.lastCheck)}
           </p>
         )}
       </div>
@@ -685,7 +686,7 @@ function ResourceDetail() {
   if (!resource) return <div className="container">Resource not found</div>;
 
   const chartData = resource.stats.checks.map((check) => ({
-    time: new Date(check.checked_at).toLocaleTimeString(),
+    time: formatChartTime(check.checked_at),
     responseTime: check.response_time,
     status: check.status === 'up' ? 1 : 0,
   }));
@@ -767,7 +768,7 @@ function ResourceDetail() {
             {resource.stats.checks.slice(-10).reverse().map((check, idx) => (
               <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
                 <td style={{ padding: '0.75rem' }}>
-                  {new Date(check.checked_at).toLocaleString()}
+                  {formatLocalTime(check.checked_at)}
                 </td>
                 <td style={{ padding: '0.75rem' }}>
                   <span className={`status-badge status-${check.status}`}>
