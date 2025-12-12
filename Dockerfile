@@ -36,6 +36,9 @@ COPY server ./server
 # Copy built React client from builder stage
 COPY --from=client-builder /app/client/build ./client/build
 
+# Create data directory and set permissions
+RUN mkdir -p /app/data && chown -R 1001:1001 /app
+
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
