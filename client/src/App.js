@@ -6,7 +6,7 @@ import './App.css';
 import SettingsWizard from './SettingsWizard';
 import History from './History';
 import SLA from './SLA';
-import { formatLocalTime, formatLocalTimeOnly, formatChartTime } from './utils/timeUtils';
+import { formatLocalTime, formatChartTime } from './utils/timeUtils';
 
 function Dashboard() {
   const [resources, setResources] = useState([]);
