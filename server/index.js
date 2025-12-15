@@ -470,29 +470,21 @@ app.get('/api/history/overview', (req, res) => {
       console.log(`Using averaged mode for ${resource.name}`);
       // Compute interval hours for bucketing (1h for 7 days, 3h for 14, 6h for 30+)
       const intervalHours = days <= 7 ? 1 : days <= 14 ? 3 : 6;
-      // Use SQLite strftime to bucket by interval
+      console.log(`Bucketing with ${intervalHours} hour intervals`);
+      
+      // Simplified query - directly group by time buckets
+      const intervalSeconds = intervalHours * 3600;
       recentChecks = db.prepare(`
-        WITH filtered AS (
-          SELECT status, response_time, checked_at
-          FROM checks
-          WHERE resource_id = ? AND checked_at > datetime('now', ?)
-        ), buckets AS (
-          SELECT 
-            status,
-            response_time,
-            checked_at,
-            (CAST(strftime('%s', checked_at) AS INTEGER) / (?*3600)) * (?*3600) AS bucket_ts
-          FROM filtered
-        )
         SELECT 
-          datetime(bucket_ts, 'unixepoch') AS checked_at,
-          AVG(CASE WHEN status='up' THEN response_time END) AS avg_up_response,
+          datetime((CAST(strftime('%s', checked_at) AS INTEGER) / ?) * ?, 'unixepoch') AS checked_at,
+          AVG(CASE WHEN status='up' THEN response_time ELSE NULL END) AS avg_up_response,
           SUM(CASE WHEN status='up' THEN 1 ELSE 0 END) AS up_count,
           COUNT(*) AS total_count
-        FROM buckets
-        GROUP BY bucket_ts
-        ORDER BY bucket_ts ASC
-      `).all(resource.id, `-${days} days`, intervalHours, intervalHours).map(row => ({
+        FROM checks
+        WHERE resource_id = ? AND checked_at > datetime('now', ?)
+        GROUP BY (CAST(strftime('%s', checked_at) AS INTEGER) / ?)
+        ORDER BY checked_at ASC
+      `).all(intervalSeconds, intervalSeconds, resource.id, `-${days} days`, intervalSeconds).map(row => ({
         status: row.up_count >= Math.ceil(row.total_count/2) ? 'up' : 'down',
         response_time: Math.round(row.avg_up_response || 0),
         checked_at: row.checked_at,
