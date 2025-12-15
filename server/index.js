@@ -552,8 +552,11 @@ app.get('/api/sla', (req, res) => {
 
   // Create cache key - ensure days is treated as a number
   const daysNum = parseInt(days);
-  const cacheKey = `sla:days=${daysNum}:page=${currentPage}:limit=${pageLimit}`;
-  console.log('SLA request:', { days: daysNum, page: currentPage, limit: pageLimit, cacheKey });
+  const retentionDays = parseInt(process.env.RETENTION_DAYS) || 7;
+  const effectiveDays = Math.min(daysNum, retentionDays);
+  const limitedByRetention = effectiveDays < daysNum;
+  const cacheKey = `sla:days=${daysNum}:eff=${effectiveDays}:page=${currentPage}:limit=${pageLimit}`;
+  console.log('SLA request:', { days: daysNum, effectiveDays, limitedByRetention, page: currentPage, limit: pageLimit, cacheKey });
   
   // Check cache first
   const cachedResult = cache.get(cacheKey);
@@ -576,7 +579,7 @@ app.get('/api/sla', (req, res) => {
       SELECT status 
       FROM checks 
       WHERE resource_id = ? AND checked_at > datetime('now', ?)
-      `).all(resource.id, `-${daysNum} days`);
+      `).all(resource.id, `-${effectiveDays} days`);
 
     const upCount = checks.filter(c => c.status === 'up').length;
     const actualUptime = checks.length > 0 ? (upCount / checks.length * 100) : 0;
@@ -588,8 +591,8 @@ app.get('/api/sla', (req, res) => {
              SUM(julianday(COALESCE(resolved_at, datetime('now'))) - julianday(started_at)) * 24 * 60 as downtime_minutes
       FROM incidents
       WHERE resource_id = ? AND started_at > datetime('now', ?)
-      `).get(resource.id, `-${daysNum} days`);
-      console.log(`SLA ${resource.name}: ${checks.length} checks in ${daysNum} days`);
+      `).get(resource.id, `-${effectiveDays} days`);
+      console.log(`SLA ${resource.name}: ${checks.length} checks in ${effectiveDays} days (requested ${daysNum})`);
 
     return {
       resource_id: resource.id,
@@ -605,7 +608,7 @@ app.get('/api/sla', (req, res) => {
     };
   });
 
-  const result = { resources: slaData, total, page: currentPage, limit: pageLimit };
+  const result = { resources: slaData, total, page: currentPage, limit: pageLimit, effective_days: effectiveDays, limited_by_retention: limitedByRetention };
   
   // Cache result for 3 minutes (180 seconds)
   cache.set(cacheKey, result, 180);

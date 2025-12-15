@@ -10,6 +10,8 @@ function SLA() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalItems, setTotalItems] = useState(0);
+  const [effectiveDays, setEffectiveDays] = useState(30);
+  const [limitedByRetention, setLimitedByRetention] = useState(false);
 
   const loadSLAData = React.useCallback(async () => {
     setLoading(true);
@@ -19,6 +21,8 @@ function SLA() {
       const data = Array.isArray(response.data.resources) ? response.data.resources : [];
       setSlaData(data);
       setTotalItems(response.data.total || data.length);
+      setEffectiveDays(response.data.effective_days || days);
+      setLimitedByRetention(Boolean(response.data.limited_by_retention));
       setLoading(false);
     } catch (error) {
       console.error('Error loading SLA data:', error);
@@ -57,6 +61,11 @@ function SLA() {
             </button>
           ))}
         </div>
+        {limitedByRetention && (
+          <div style={{ background: '#FFF8E1', color: '#8D6E63', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #FFECB3' }}>
+            Limited by data retention ({effectiveDays} days). Increase Retention in Settings to view longer periods.
+          </div>
+        )}
       </div>
 
       {overallStats && (
@@ -184,7 +193,7 @@ function SLA() {
       <div style={{ marginTop: '2rem', padding: '1.5rem', background: '#f5f5f5', borderRadius: '8px' }}>
         <h3 style={{ marginTop: 0, color: '#667eea' }}>SLA Report Summary</h3>
         <p style={{ color: '#666', lineHeight: '1.6' }}>
-          This report shows the Service Level Agreement (SLA) performance for all monitored resources over the last <strong>{days} days</strong>.
+          This report shows the Service Level Agreement (SLA) performance for all monitored resources over the last <strong>{effectiveDays} days</strong>.
           Resources meeting their target uptime are marked as <strong style={{ color: '#4caf50' }}>PASS</strong>, while those below target are marked as <strong style={{ color: '#f44336' }}>FAIL</strong>.
         </p>
         <p style={{ color: '#666', lineHeight: '1.6', marginBottom: 0 }}>
