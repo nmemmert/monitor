@@ -11,11 +11,7 @@ function SLA() {
   const [pageSize, setPageSize] = useState(10);
   const [totalItems, setTotalItems] = useState(0);
 
-  useEffect(() => {
-    loadSLAData();
-  }, [days, currentPage, pageSize]);
-
-  const loadSLAData = async () => {
+  const loadSLAData = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -29,19 +25,11 @@ function SLA() {
       setError(error.message);
       setLoading(false);
     }
-  };
+  }, [days, currentPage, pageSize]);
 
-  const acknowledgeIncident = async (incidentId) => {
-    try {
-      await axios.post(`/api/incidents/${incidentId}/acknowledge`, {
-        acknowledged_by: 'User'
-      });
-      alert('Incident acknowledged');
-    } catch (error) {
-      console.error('Error acknowledging incident:', error);
-      alert('Error acknowledging incident');
-    }
-  };
+  useEffect(() => {
+    loadSLAData();
+  }, [loadSLAData]);
 
   if (loading) return <div className="container">Loading SLA data...</div>;
   if (error) return <div className="container">Error loading SLA data: {error}</div>;
