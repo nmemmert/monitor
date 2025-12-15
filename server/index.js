@@ -68,8 +68,10 @@ function getTimezoneOffset() {
   
   console.log(`Timezone offset for ${tz}: ${offsetHours} hours (UTC ${utcHour}:00, TZ ${tzHour}:00)`);
   
-  // SQL datetime() function: negative means subtract, positive means add
-  return offsetHours > 0 ? `+${offsetHours} hours` : `${offsetHours} hours`;
+  // SQL datetime() function: we need the OPPOSITE sign
+  // If local is 5 hours behind UTC, we need to ADD 5 hours to go backwards (counterintuitive but correct for SQLite)
+  const sqlOffset = -offsetHours;
+  return sqlOffset > 0 ? `+${sqlOffset} hours` : `${sqlOffset} hours`;
 }
 
 app.use(cors());
