@@ -420,7 +420,7 @@ app.get('/api/resources/:id/history', (req, res) => {
 // Get all resources' check history for dashboard (optimized with aggregation)
 app.get('/api/history/overview', (req, res) => {
   const { days = 7, page = 1, page: pageParam, averaged = 'false' } = req.query;
-  console.log('History overview request:', { days, averaged, type: typeof averaged });
+  console.log('History overview request:', { days, averaged, type: typeof averaged, timestamp: new Date().toISOString() });
   // Resource pagination (number of resources per page)
   const pageLimit = parseInt(req.query.limit || 10);
   const currentPage = Math.max(1, parseInt(pageParam || page || 1));
@@ -655,6 +655,13 @@ app.post('/api/test-webhook', async (req, res) => {
     console.error('Test webhook error:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// Clear cache endpoint for debugging
+app.post('/api/cache/clear', (req, res) => {
+  cache.clear();
+  console.log('Cache cleared at', new Date().toISOString());
+  res.json({ message: 'Cache cleared successfully' });
 });
 
 // Serve React app with proper MIME types
