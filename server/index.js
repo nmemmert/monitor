@@ -12,6 +12,22 @@ const cache = require('./cache');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Helper to get timezone offset for SQL queries
+function getTimezoneOffset() {
+  const tz = process.env.TIMEZONE || 'UTC';
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' });
+  const parts = formatter.formatToParts(now);
+  
+  // Calculate offset in hours
+  const utcDate = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const tzDate = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+  const offsetMs = tzDate - utcDate;
+  const offsetHours = offsetMs / (1000 * 60 * 60);
+  
+  return offsetHours > 0 ? `+${Math.abs(offsetHours)} hours` : `${offsetHours} hours`;
+}
+
 app.use(cors());
 app.use(express.json());
 
@@ -475,10 +491,11 @@ app.get('/api/history/overview', (req, res) => {
       // Use a reliable bucketing approach with Julian Day Numbers
       // Convert to julian day, multiply by 24 for hours, divide by intervalHours and round
       const bucketExpr = `ROUND((julianday(checked_at) * 24) / ${intervalHours}) * ${intervalHours} / 24`;
+      const tzOffset = getTimezoneOffset();
       
       recentChecks = db.prepare(`
         SELECT 
-          datetime(${bucketExpr}) AS checked_at,
+          datetime(${bucketExpr}, '${tzOffset}') AS checked_at,
           AVG(CASE WHEN status='up' THEN response_time ELSE NULL END) AS avg_up_response,
           SUM(CASE WHEN status='up' THEN 1 ELSE 0 END) AS up_count,
           COUNT(*) AS total_count
@@ -495,8 +512,9 @@ app.get('/api/history/overview', (req, res) => {
     } else {
       console.log(`Using non-averaged mode for ${resource.name}`);
       // Non-averaged: filter to window but cap to last 600 checks
+      const tzOffset = getTimezoneOffset();
       recentChecks = db.prepare(`
-        SELECT status, response_time, checked_at
+        SELECT status, response_time, datetime(checked_at, '${tzOffset}') as checked_at
         FROM checks
         WHERE resource_id = ? AND checked_at > datetime('now', ?)
         ORDER BY checked_at DESC
