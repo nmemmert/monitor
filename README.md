@@ -35,6 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/nmemmert/monitor/main/install-ubunt
 | [📦 Installation](docs/INSTALLATION.md) | Quick install, manual setup, dev/prod modes |
 | [🚀 Deployment](docs/DEPLOYMENT.md) | Deploy to remote servers, Docker, services, firewall |
 | [📚 Usage Guide](docs/USAGE.md) | Dashboard, History, Settings, Resources, SLA Reports |
+| [⬆️ Upgrade Guide](docs/UPGRADE.md) | How to upgrade to new versions |
 | [🆘 Troubleshooting](docs/TROUBLESHOOTING.md) | Common issues and solutions |
 
 ## History Feature
