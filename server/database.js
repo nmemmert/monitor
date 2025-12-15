@@ -127,4 +127,10 @@ try {
   db.prepare("ALTER TABLE checks ADD COLUMN cert_expiry_date TEXT").run();
 } catch (err) {}
 
+// Helpful indexes for time-range queries
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_checks_resource_time ON checks(resource_id, checked_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_incidents_resource_time ON incidents(resource_id, started_at DESC);
+`);
+
 module.exports = db;

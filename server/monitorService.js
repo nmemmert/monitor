@@ -356,6 +356,174 @@ class MonitorService {
       checks: checks.slice(-50), // Last 50 checks
     };
   }
+
+  /**
+   * Paginated checks with basic filters and ISO timestamps
+   */
+  getChecks(resourceId, {
+    limit = 50,
+    offset = 0,
+    status = null,
+    from = null,
+    to = null,
+    sort = 'desc',
+  } = {}) {
+    const clauses = ['resource_id = ?'];
+    const params = [resourceId];
+
+    if (status) {
+      clauses.push('status = ?');
+      params.push(status);
+    }
+    if (from) {
+      clauses.push('checked_at >= ?');
+      params.push(from);
+    }
+    if (to) {
+      clauses.push('checked_at <= ?');
+      params.push(to);
+    }
+
+    const order = sort === 'asc' ? 'ASC' : 'DESC';
+
+    const sql = `
+      SELECT
+        id,
+        resource_id,
+        status,
+        response_time,
+        status_code,
+        error_message,
+        details,
+        REPLACE(checked_at, ' ', 'T') || 'Z' AS checked_at
+      FROM checks
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY checked_at ${order}
+      LIMIT ? OFFSET ?
+    `;
+    return db.prepare(sql).all(...params, limit, offset);
+  }
+
+  /**
+   * Incidents timeline with filters
+   */
+  getIncidents(resourceId, {
+    limit = 50,
+    offset = 0,
+    status = 'all', // all | open | closed
+    from = null,
+    to = null,
+    sort = 'desc',
+  } = {}) {
+    const clauses = ['resource_id = ?'];
+    const params = [resourceId];
+
+    if (status === 'open') {
+      clauses.push('resolved_at IS NULL');
+    } else if (status === 'closed') {
+      clauses.push('resolved_at IS NOT NULL');
+    }
+
+    if (from) {
+      clauses.push('started_at >= ?');
+      params.push(from);
+    }
+    if (to) {
+      clauses.push('started_at <= ?');
+      params.push(to);
+    }
+
+    const order = sort === 'asc' ? 'ASC' : 'DESC';
+    const sql = `
+      SELECT
+        id,
+        resource_id,
+        REPLACE(started_at, ' ', 'T') || 'Z' AS started_at,
+        CASE
+          WHEN resolved_at IS NULL THEN NULL
+          ELSE REPLACE(resolved_at, ' ', 'T') || 'Z'
+        END AS resolved_at
+      FROM incidents
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY started_at ${order}
+      LIMIT ? OFFSET ?
+    `;
+    return db.prepare(sql).all(...params, limit, offset);
+  }
+
+  /**
+   * SLA/SLO summary over a time window
+   */
+  getSlaSummary(resourceId, hours = 24) {
+    const checks = db.prepare(`
+      SELECT
+        status,
+        response_time,
+        REPLACE(checked_at, ' ', 'T') || 'Z' AS checked_at
+      FROM checks
+      WHERE resource_id = ?
+        AND checked_at >= datetime('now', '-' || ? || ' hours')
+      ORDER BY checked_at ASC
+    `).all(resourceId, hours);
+
+    if (checks.length < 2) {
+      return {
+        windowHours: hours,
+        uptimePct: 0,
+        downtimeMinutes: 0,
+        mttrMinutes: null,
+        mtbfMinutes: null,
+        p95LatencyMs: null,
+        totalChecks: checks.length,
+      };
+    }
+
+    let upMs = 0;
+    let downMs = 0;
+    const upRuns = [];
+    const downRuns = [];
+
+    for (let i = 0; i < checks.length - 1; i++) {
+      const cur = checks[i];
+      const next = checks[i + 1];
+      const curTime = new Date(cur.checked_at).getTime();
+      const nextTime = new Date(next.checked_at).getTime();
+      const span = Math.max(0, nextTime - curTime);
+
+      if (cur.status === 'up') {
+        upMs += span;
+        upRuns.push(span);
+      } else {
+        downMs += span;
+        downRuns.push(span);
+      }
+    }
+
+    const totalMs = upMs + downMs || 1;
+    const uptimePct = 100 * (upMs / totalMs);
+
+    const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+    const mttrMs = avg(downRuns);
+    const mtbfMs = avg(upRuns);
+
+    const latencies = checks
+      .map(c => c.response_time)
+      .filter(v => typeof v === 'number')
+      .sort((a, b) => a - b);
+    const p95LatencyMs = latencies.length
+      ? latencies[Math.floor(0.95 * (latencies.length - 1))]
+      : null;
+
+    return {
+      windowHours: hours,
+      uptimePct: Number(uptimePct.toFixed(2)),
+      downtimeMinutes: Number((downMs / 60000).toFixed(2)),
+      mttrMinutes: mttrMs != null ? Number((mttrMs / 60000).toFixed(2)) : null,
+      mtbfMinutes: mtbfMs != null ? Number((mtbfMs / 60000).toFixed(2)) : null,
+      p95LatencyMs,
+      totalChecks: checks.length,
+    };
+  }
 }
 
 module.exports = new MonitorService();

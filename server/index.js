@@ -481,6 +481,73 @@ app.get('/api/resources/:id/history', (req, res) => {
   });
 });
 
+// Paginated checks with filters
+app.get('/api/resources/:id/checks', (req, res) => {
+  const resourceId = Number(req.params.id);
+  const {
+    limit = 50,
+    offset = 0,
+    status,
+    from,
+    to,
+    sort = 'desc',
+  } = req.query;
+
+  try {
+    const checks = monitorService.getChecks(resourceId, {
+      limit: Math.min(Number(limit), 200),
+      offset: Number(offset),
+      status,
+      from,
+      to,
+      sort,
+    });
+    res.json({ checks });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Incidents timeline
+app.get('/api/resources/:id/incidents', (req, res) => {
+  const resourceId = Number(req.params.id);
+  const {
+    limit = 50,
+    offset = 0,
+    status = 'all',
+    from,
+    to,
+    sort = 'desc',
+  } = req.query;
+
+  try {
+    const incidents = monitorService.getIncidents(resourceId, {
+      limit: Math.min(Number(limit), 200),
+      offset: Number(offset),
+      status,
+      from,
+      to,
+      sort,
+    });
+    res.json({ incidents });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// SLA/SLO summary for a resource
+app.get('/api/resources/:id/sla', (req, res) => {
+  const resourceId = Number(req.params.id);
+  const hours = req.query.hours ? Number(req.query.hours) : 24;
+
+  try {
+    const summary = monitorService.getSlaSummary(resourceId, hours);
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get all resources' check history for dashboard (optimized with aggregation)
 app.get('/api/history/overview', (req, res) => {
   const { days = 7, page = 1, page: pageParam, averaged = 'false' } = req.query;
