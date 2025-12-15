@@ -428,12 +428,15 @@ app.get('/api/history/overview', (req, res) => {
 
   // Create cache key based on query parameters
   const cacheKey = `history:days=${days}:page=${currentPage}:limit=${pageLimit}:averaged=${averaged}`;
+  console.log('Cache key:', cacheKey);
   
   // Check cache first
   const cachedResult = cache.get(cacheKey);
   if (cachedResult) {
+    console.log('Returning cached result');
     return res.json(cachedResult);
   }
+  console.log('No cache hit, querying database');
 
   // Get total count of enabled resources
   const totalCount = db.prepare('SELECT COUNT(*) as count FROM resources WHERE enabled = 1').get();
@@ -460,7 +463,10 @@ app.get('/api/history/overview', (req, res) => {
     const avgResponseTime = stats.avg_response || 0;
 
     let recentChecks = [];
-    if (String(averaged).toLowerCase() === 'true') {
+    const isAveraged = String(averaged).toLowerCase() === 'true';
+    console.log(`Resource ${resource.name}: averaged=${averaged}, isAveraged=${isAveraged}`);
+    
+    if (isAveraged) {
       console.log(`Using averaged mode for ${resource.name}`);
       // Compute interval hours for bucketing (1h for 7 days, 3h for 14, 6h for 30+)
       const intervalHours = days <= 7 ? 1 : days <= 14 ? 3 : 6;
@@ -491,6 +497,7 @@ app.get('/api/history/overview', (req, res) => {
         response_time: Math.round(row.avg_up_response || 0),
         checked_at: row.checked_at,
       }));
+      console.log(`${resource.name}: Returned ${recentChecks.length} averaged data points`);
     } else {
       console.log(`Using non-averaged mode for ${resource.name}`);
       // Non-averaged: filter to window but cap to last 600 checks
@@ -501,6 +508,7 @@ app.get('/api/history/overview', (req, res) => {
         ORDER BY checked_at DESC
         LIMIT 600
       `).all(resource.id, `-${days} days`).reverse();
+      console.log(`${resource.name}: Returned ${recentChecks.length} non-averaged data points`);
     }
 
     return {
