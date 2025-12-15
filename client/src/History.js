@@ -19,7 +19,7 @@ function History() {
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showAveraged, setShowAveraged] = useState(false);
+  const [showAveraged, setShowAveraged] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalItems, setTotalItems] = useState(0);
