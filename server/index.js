@@ -230,6 +230,26 @@ app.get('/api/settings', (req, res) => {
     check_interval: parseInt(process.env.CHECK_INTERVAL) || 60000,
     timeout: parseInt(process.env.TIMEOUT) || 5000,
     timezone: process.env.TIMEZONE || 'UTC',
+    // Data retention settings
+    retention_days: parseInt(process.env.RETENTION_DAYS) || 7,
+    auto_cleanup_enabled: process.env.AUTO_CLEANUP_ENABLED === 'true',
+    // Incident thresholds
+    consecutive_failures: parseInt(process.env.CONSECUTIVE_FAILURES) || 3,
+    grace_period: parseInt(process.env.GRACE_PERIOD) || 300,
+    downtime_threshold: parseInt(process.env.DOWNTIME_THRESHOLD) || 600,
+    // Alert retry logic
+    alert_retry_count: parseInt(process.env.ALERT_RETRY_COUNT) || 3,
+    alert_retry_delay: parseInt(process.env.ALERT_RETRY_DELAY) || 60,
+    fallback_webhook: process.env.FALLBACK_WEBHOOK || '',
+    // Alert scheduling
+    global_quiet_hours_start: process.env.GLOBAL_QUIET_HOURS_START || '',
+    global_quiet_hours_end: process.env.GLOBAL_QUIET_HOURS_END || '',
+    escalation_hours: parseInt(process.env.ESCALATION_HOURS) || 4,
+    // Dashboard customization
+    default_sort: process.env.DEFAULT_SORT || 'name',
+    items_per_page: parseInt(process.env.ITEMS_PER_PAGE) || 20,
+    refresh_interval: parseInt(process.env.REFRESH_INTERVAL) || 5000,
+    theme: process.env.THEME || 'light',
   };
   res.json(settings);
 });
@@ -252,6 +272,22 @@ app.post('/api/settings', (req, res) => {
     webhook_url,
     check_interval,
     timeout,
+    timezone,
+    retention_days,
+    auto_cleanup_enabled,
+    consecutive_failures,
+    grace_period,
+    downtime_threshold,
+    alert_retry_count,
+    alert_retry_delay,
+    fallback_webhook,
+    global_quiet_hours_start,
+    global_quiet_hours_end,
+    escalation_hours,
+    default_sort,
+    items_per_page,
+    refresh_interval,
+    theme,
   } = req.body;
 
   const envContent = `PORT=${process.env.PORT || 3001}
@@ -266,6 +302,22 @@ WEBHOOK_ENABLED=${webhook_enabled}
 WEBHOOK_URL=${webhook_url}
 CHECK_INTERVAL=${check_interval}
 TIMEOUT=${timeout}
+  TIMEZONE=${timezone || 'UTC'}
+  RETENTION_DAYS=${retention_days || 7}
+  AUTO_CLEANUP_ENABLED=${auto_cleanup_enabled}
+  CONSECUTIVE_FAILURES=${consecutive_failures || 3}
+  GRACE_PERIOD=${grace_period || 300}
+  DOWNTIME_THRESHOLD=${downtime_threshold || 600}
+  ALERT_RETRY_COUNT=${alert_retry_count || 3}
+  ALERT_RETRY_DELAY=${alert_retry_delay || 60}
+  FALLBACK_WEBHOOK=${fallback_webhook || ''}
+  GLOBAL_QUIET_HOURS_START=${global_quiet_hours_start || ''}
+  GLOBAL_QUIET_HOURS_END=${global_quiet_hours_end || ''}
+  ESCALATION_HOURS=${escalation_hours || 4}
+  DEFAULT_SORT=${default_sort || 'name'}
+  ITEMS_PER_PAGE=${items_per_page || 20}
+  REFRESH_INTERVAL=${refresh_interval || 5000}
+  THEME=${theme || 'light'}
 `;
 
   try {
@@ -284,6 +336,21 @@ TIMEOUT=${timeout}
     process.env.WEBHOOK_URL = webhook_url;
     process.env.CHECK_INTERVAL = String(check_interval);
     process.env.TIMEOUT = String(timeout);
+      process.env.RETENTION_DAYS = String(retention_days || 7);
+      process.env.AUTO_CLEANUP_ENABLED = String(auto_cleanup_enabled);
+      process.env.CONSECUTIVE_FAILURES = String(consecutive_failures || 3);
+      process.env.GRACE_PERIOD = String(grace_period || 300);
+      process.env.DOWNTIME_THRESHOLD = String(downtime_threshold || 600);
+      process.env.ALERT_RETRY_COUNT = String(alert_retry_count || 3);
+      process.env.ALERT_RETRY_DELAY = String(alert_retry_delay || 60);
+      process.env.FALLBACK_WEBHOOK = fallback_webhook || '';
+      process.env.GLOBAL_QUIET_HOURS_START = global_quiet_hours_start || '';
+      process.env.GLOBAL_QUIET_HOURS_END = global_quiet_hours_end || '';
+      process.env.ESCALATION_HOURS = String(escalation_hours || 4);
+      process.env.DEFAULT_SORT = default_sort || 'name';
+      process.env.ITEMS_PER_PAGE = String(items_per_page || 20);
+      process.env.REFRESH_INTERVAL = String(refresh_interval || 5000);
+      process.env.THEME = theme || 'light';
 
     notificationService.setConfig({
       email_enabled: email_enabled === true || email_enabled === 'true',

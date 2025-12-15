@@ -16,6 +16,21 @@ function SettingsWizard() {
     check_interval: 60000,
     timeout: 5000,
     timezone: 'UTC',
+      retention_days: 7,
+      auto_cleanup_enabled: false,
+      consecutive_failures: 3,
+      grace_period: 300,
+      downtime_threshold: 600,
+      alert_retry_count: 3,
+      alert_retry_delay: 60,
+      fallback_webhook: '',
+      global_quiet_hours_start: '',
+      global_quiet_hours_end: '',
+      escalation_hours: 4,
+      default_sort: 'name',
+      items_per_page: 20,
+      refresh_interval: 5000,
+      theme: 'light',
   });
 
   const [testResult, setTestResult] = useState(null);
