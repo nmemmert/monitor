@@ -264,8 +264,8 @@ class MonitorService {
 
   saveCheck(check) {
     const stmt = db.prepare(`
-      INSERT INTO checks (resource_id, status, response_time, status_code, error_message, details)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO checks (resource_id, status, response_time, status_code, error_message, details, checked_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
     `);
     stmt.run(
       check.resource_id,

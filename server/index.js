@@ -231,7 +231,7 @@ app.get('/api/dashboard', (req, res) => {
     `).get(resource.id);
 
     const recentChecks = db.prepare(`
-      SELECT response_time, status, checked_at || 'Z' as checked_at
+      SELECT response_time, status, REPLACE(checked_at, ' ', 'T') || 'Z' as checked_at
       FROM checks
       WHERE resource_id = ?
       ORDER BY checked_at DESC
@@ -462,7 +462,7 @@ app.get('/api/resources/:id/history', (req, res) => {
       status_code,
       error_message,
       details,
-      checked_at || 'Z' as checked_at
+      REPLACE(checked_at, ' ', 'T') || 'Z' as checked_at
     FROM checks
     WHERE resource_id = ? AND checked_at > datetime('now', ?)
     ORDER BY checked_at DESC
@@ -542,7 +542,7 @@ app.get('/api/history/overview', (req, res) => {
       
       recentChecks = db.prepare(`
         SELECT 
-          datetime(${bucketExpr}) || 'Z' AS checked_at,
+          REPLACE(datetime(${bucketExpr}), ' ', 'T') || 'Z' AS checked_at,
           AVG(CASE WHEN status='up' THEN response_time ELSE NULL END) AS avg_up_response,
           SUM(CASE WHEN status='up' THEN 1 ELSE 0 END) AS up_count,
           COUNT(*) AS total_count
@@ -560,7 +560,7 @@ app.get('/api/history/overview', (req, res) => {
       console.log(`Using non-averaged mode for ${resource.name}`);
       // Non-averaged: filter to window but cap to last 600 checks
       recentChecks = db.prepare(`
-        SELECT status, response_time, checked_at || 'Z' as checked_at
+        SELECT status, response_time, REPLACE(checked_at, ' ', 'T') || 'Z' as checked_at
         FROM checks
         WHERE resource_id = ? AND checked_at > datetime('now', ?)
         ORDER BY checked_at DESC
