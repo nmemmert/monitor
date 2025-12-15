@@ -22,9 +22,11 @@ export const formatLocalTime = (timestamp, options = {}) => {
   let timeZone;
   try {
     const cachedSettings = localStorage.getItem('serverTimezone');
-    timeZone = cachedSettings || undefined; // Use browser TZ if not set
+    if (cachedSettings && cachedSettings !== 'null' && cachedSettings !== 'undefined') {
+      timeZone = cachedSettings;
+    }
   } catch (e) {
-    timeZone = undefined;
+    // Ignore errors
   }
   
   const defaultOptions = {
@@ -34,9 +36,12 @@ export const formatLocalTime = (timestamp, options = {}) => {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    timeZoneName: 'short',
-    ...(timeZone && { timeZone })
+    timeZoneName: 'short'
   };
+  
+  if (timeZone) {
+    defaultOptions.timeZone = timeZone;
+  }
   
   return date.toLocaleString('en-US', { ...defaultOptions, ...options });
 };
