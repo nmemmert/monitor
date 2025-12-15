@@ -550,14 +550,18 @@ app.get('/api/sla', (req, res) => {
   const currentPage = Math.max(1, parseInt(page));
   const offset = (currentPage - 1) * pageLimit;
 
-  // Create cache key
-  const cacheKey = `sla:days=${days}:page=${currentPage}:limit=${pageLimit}`;
+  // Create cache key - ensure days is treated as a number
+  const daysNum = parseInt(days);
+  const cacheKey = `sla:days=${daysNum}:page=${currentPage}:limit=${pageLimit}`;
+  console.log('SLA request:', { days: daysNum, page: currentPage, limit: pageLimit, cacheKey });
   
   // Check cache first
   const cachedResult = cache.get(cacheKey);
   if (cachedResult) {
+    console.log('SLA: Cache hit');
     return res.json(cachedResult);
   }
+  console.log('SLA: Cache miss, querying database');
 
   // Get total count
   const totalCount = db.prepare('SELECT COUNT(*) as count FROM resources WHERE enabled = 1').get();
@@ -572,7 +576,7 @@ app.get('/api/sla', (req, res) => {
       SELECT status 
       FROM checks 
       WHERE resource_id = ? AND checked_at > datetime('now', ?)
-    `).all(resource.id, `-${days} days`);
+      `).all(resource.id, `-${daysNum} days`);
 
     const upCount = checks.filter(c => c.status === 'up').length;
     const actualUptime = checks.length > 0 ? (upCount / checks.length * 100) : 0;
@@ -584,7 +588,8 @@ app.get('/api/sla', (req, res) => {
              SUM(julianday(COALESCE(resolved_at, datetime('now'))) - julianday(started_at)) * 24 * 60 as downtime_minutes
       FROM incidents
       WHERE resource_id = ? AND started_at > datetime('now', ?)
-    `).get(resource.id, `-${days} days`);
+      `).get(resource.id, `-${daysNum} days`);
+      console.log(`SLA ${resource.name}: ${checks.length} checks in ${daysNum} days`);
 
     return {
       resource_id: resource.id,
