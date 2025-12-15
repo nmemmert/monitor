@@ -8,6 +8,16 @@ import History from './History';
 import SLA from './SLA';
 import { formatLocalTime, formatChartTime } from './utils/timeUtils';
 
+// Simple duration formatter for incident spans
+function formatDuration(ms) {
+  if (!ms || ms < 0) return '0m';
+  const minutes = Math.floor(ms / 60000);
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
 function Dashboard() {
   const [resources, setResources] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -639,13 +649,43 @@ function ResourceDetail() {
   const navigate = useNavigate();
   const [resource, setResource] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [checks, setChecks] = useState([]);
+  const [checksLoading, setChecksLoading] = useState(false);
+  const [checksStatus, setChecksStatus] = useState('');
+  const [checksPage, setChecksPage] = useState(0);
+  const checksLimit = 10;
+  const [checksSort, setChecksSort] = useState('desc');
+
+  const [incidents, setIncidents] = useState([]);
+  const [incidentsLoading, setIncidentsLoading] = useState(false);
+  const [incidentsStatus, setIncidentsStatus] = useState('all');
+  const [incidentsPage, setIncidentsPage] = useState(0);
+  const incidentsLimit = 10;
+  const [incidentsSort, setIncidentsSort] = useState('desc');
+
+  const [sla, setSla] = useState(null);
+  const [slaLoading, setSlaLoading] = useState(false);
+  const slaWindow = 24;
 
   useEffect(() => {
     loadResource();
+    loadChecks();
+    loadIncidents();
+    loadSla();
     const interval = setInterval(loadResource, 5000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    loadChecks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checksStatus, checksPage, checksSort]);
+
+  useEffect(() => {
+    loadIncidents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incidentsStatus, incidentsPage, incidentsSort]);
 
   const loadResource = async () => {
     try {
@@ -655,6 +695,56 @@ function ResourceDetail() {
     } catch (error) {
       console.error('Error loading resource:', error);
       setLoading(false);
+    }
+  };
+
+  const loadChecks = async () => {
+    try {
+      setChecksLoading(true);
+      const response = await axios.get(`/api/resources/${id}/checks`, {
+        params: {
+          limit: checksLimit,
+          offset: checksPage * checksLimit,
+          status: checksStatus || undefined,
+          sort: checksSort,
+        },
+      });
+      setChecks(response.data.checks || []);
+    } catch (error) {
+      console.error('Error loading checks:', error);
+    } finally {
+      setChecksLoading(false);
+    }
+  };
+
+  const loadIncidents = async () => {
+    try {
+      setIncidentsLoading(true);
+      const response = await axios.get(`/api/resources/${id}/incidents`, {
+        params: {
+          limit: incidentsLimit,
+          offset: incidentsPage * incidentsLimit,
+          status: incidentsStatus,
+          sort: incidentsSort,
+        },
+      });
+      setIncidents(response.data.incidents || []);
+    } catch (error) {
+      console.error('Error loading incidents:', error);
+    } finally {
+      setIncidentsLoading(false);
+    }
+  };
+
+  const loadSla = async () => {
+    try {
+      setSlaLoading(true);
+      const response = await axios.get(`/api/resources/${id}/sla`, { params: { hours: slaWindow } });
+      setSla(response.data);
+    } catch (error) {
+      console.error('Error loading SLA summary:', error);
+    } finally {
+      setSlaLoading(false);
     }
   };
 
@@ -739,6 +829,42 @@ function ResourceDetail() {
       </div>
 
       <div className="detail-section">
+        <h2>SLA / SLO (last {slaWindow}h)</h2>
+        {slaLoading ? (
+          <p>Loading SLA...</p>
+        ) : !sla ? (
+          <p>No SLA data yet</p>
+        ) : (
+          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="stat">
+              <p className="stat-value">{sla.uptimePct}%</p>
+              <p className="stat-label">Uptime</p>
+            </div>
+            <div className="stat">
+              <p className="stat-value">{formatDuration(sla.downtimeMinutes * 60000 || 0)}</p>
+              <p className="stat-label">Downtime</p>
+            </div>
+            <div className="stat">
+              <p className="stat-value">{sla.p95LatencyMs != null ? `${sla.p95LatencyMs}ms` : '—'}</p>
+              <p className="stat-label">p95 Latency</p>
+            </div>
+            <div className="stat">
+              <p className="stat-value">{sla.totalChecks}</p>
+              <p className="stat-label">Checks in window</p>
+            </div>
+            <div className="stat">
+              <p className="stat-value">{sla.mttrMinutes != null ? `${sla.mttrMinutes}m` : '—'}</p>
+              <p className="stat-label">MTTR</p>
+            </div>
+            <div className="stat">
+              <p className="stat-value">{sla.mtbfMinutes != null ? `${sla.mtbfMinutes}m` : '—'}</p>
+              <p className="stat-label">MTBF</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="detail-section">
         <h2>Response Time (Last 50 Checks)</h2>
         <div className="chart-container">
           <ResponsiveContainer width="100%" height="100%">
@@ -755,6 +881,27 @@ function ResourceDetail() {
 
       <div className="detail-section">
         <h2>Recent Checks</h2>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          <div>
+            <label style={{ fontSize: '0.9rem', color: '#555', marginRight: '0.4rem' }}>Status</label>
+            <select value={checksStatus} onChange={(e) => { setChecksPage(0); setChecksStatus(e.target.value); }}>
+              <option value="">All</option>
+              <option value="up">Up</option>
+              <option value="down">Down</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: '0.9rem', color: '#555', marginRight: '0.4rem' }}>Sort</label>
+            <select value={checksSort} onChange={(e) => { setChecksPage(0); setChecksSort(e.target.value); }}>
+              <option value="desc">Newest first</option>
+              <option value="asc">Oldest first</option>
+            </select>
+          </div>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+            <button className="btn btn-secondary" disabled={checksPage === 0 || checksLoading} onClick={() => setChecksPage(Math.max(0, checksPage - 1))}>← Prev</button>
+            <button className="btn btn-secondary" disabled={checksLoading || checks.length < checksLimit} onClick={() => setChecksPage(checksPage + 1)}>Next →</button>
+          </div>
+        </div>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid #ddd' }}>
@@ -765,8 +912,12 @@ function ResourceDetail() {
             </tr>
           </thead>
           <tbody>
-            {resource.stats.checks.slice(-10).reverse().map((check, idx) => (
-              <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
+            {checksLoading ? (
+              <tr><td colSpan="4" style={{ padding: '0.75rem' }}>Loading checks...</td></tr>
+            ) : checks.length === 0 ? (
+              <tr><td colSpan="4" style={{ padding: '0.75rem' }}>No checks found</td></tr>
+            ) : checks.map((check) => (
+              <tr key={check.id} style={{ borderBottom: '1px solid #eee' }}>
                 <td style={{ padding: '0.75rem' }}>
                   {formatLocalTime(check.checked_at)}
                 </td>
@@ -783,6 +934,59 @@ function ResourceDetail() {
                 </td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="detail-section">
+        <h2>Incidents Timeline</h2>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          <div>
+            <label style={{ fontSize: '0.9rem', color: '#555', marginRight: '0.4rem' }}>Status</label>
+            <select value={incidentsStatus} onChange={(e) => { setIncidentsPage(0); setIncidentsStatus(e.target.value); }}>
+              <option value="all">All</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: '0.9rem', color: '#555', marginRight: '0.4rem' }}>Sort</label>
+            <select value={incidentsSort} onChange={(e) => { setIncidentsPage(0); setIncidentsSort(e.target.value); }}>
+              <option value="desc">Newest first</option>
+              <option value="asc">Oldest first</option>
+            </select>
+          </div>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+            <button className="btn btn-secondary" disabled={incidentsPage === 0 || incidentsLoading} onClick={() => setIncidentsPage(Math.max(0, incidentsPage - 1))}>← Prev</button>
+            <button className="btn btn-secondary" disabled={incidentsLoading || incidents.length < incidentsLimit} onClick={() => setIncidentsPage(incidentsPage + 1)}>Next →</button>
+          </div>
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Started</th>
+              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Resolved</th>
+              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Duration</th>
+            </tr>
+          </thead>
+          <tbody>
+            {incidentsLoading ? (
+              <tr><td colSpan="3" style={{ padding: '0.75rem' }}>Loading incidents...</td></tr>
+            ) : incidents.length === 0 ? (
+              <tr><td colSpan="3" style={{ padding: '0.75rem' }}>No incidents found</td></tr>
+            ) : incidents.map((incident) => {
+              const start = incident.started_at || incident.created_at;
+              const end = incident.resolved_at;
+              const durationMs = start && end ? (new Date(end).getTime() - new Date(start).getTime()) : null;
+              const durationText = durationMs != null ? formatDuration(durationMs) : 'Ongoing';
+              return (
+                <tr key={incident.id} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '0.75rem' }}>{start ? formatLocalTime(start) : '-'}</td>
+                  <td style={{ padding: '0.75rem' }}>{end ? formatLocalTime(end) : 'Open'}</td>
+                  <td style={{ padding: '0.75rem' }}>{durationText}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
