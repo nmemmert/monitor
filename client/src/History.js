@@ -102,6 +102,7 @@ function History() {
           {historyData.map((resource) => {
             // Server already handles averaging when averaged=true is passed
             const chartData = prepareChartData(resource.checks || []);
+            console.log(`${resource.name} - Total data points:`, chartData.length, 'Averaged mode:', showAveraged);
 
             return (
               <div key={resource.id} className="detail-section" style={{ marginBottom: '3rem', background: '#fff', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
