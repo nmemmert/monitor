@@ -16,7 +16,13 @@ export const getCurrentTimezone = () => {
 export const formatLocalTime = (timestamp, options = {}) => {
   if (!timestamp) return 'Never';
   
-  const date = new Date(timestamp);
+  // Normalize timestamp to ISO if backend returned space-separated datetime
+  let ts = timestamp;
+  if (typeof ts === 'string' && ts.includes(' ') && !ts.includes('T')) {
+    ts = ts.replace(' ', 'T') + 'Z';
+  }
+  
+  const date = new Date(ts);
   
   // Try to get server timezone from settings API response (cached in localStorage)
   let timeZone;
