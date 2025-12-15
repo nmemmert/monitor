@@ -15,6 +15,7 @@ function SettingsWizard() {
     webhook_url: '',
     check_interval: 60000,
     timeout: 5000,
+    timezone: 'UTC',
   });
 
   const [testResult, setTestResult] = useState(null);
@@ -308,6 +309,33 @@ function SettingsWizard() {
                 step="1000"
               />
               <small>How long to wait before considering a request failed</small>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Timezone</label>
+              <select
+                value={settings.timezone}
+                onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
+              >
+                <option value="UTC">UTC</option>
+                <option value="America/New_York">America/New_York (EST)</option>
+                <option value="America/Chicago">America/Chicago (CST)</option>
+                <option value="America/Denver">America/Denver (MST)</option>
+                <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
+                <option value="Europe/London">Europe/London (GMT)</option>
+                <option value="Europe/Paris">Europe/Paris (CET)</option>
+                <option value="Europe/Berlin">Europe/Berlin (CET)</option>
+                <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                <option value="Asia/Shanghai">Asia/Shanghai (CST)</option>
+                <option value="Asia/Hong_Kong">Asia/Hong_Kong (HKT)</option>
+                <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+                <option value="Asia/Dubai">Asia/Dubai (GST)</option>
+                <option value="Australia/Sydney">Australia/Sydney (AEDT)</option>
+                <option value="Australia/Melbourne">Australia/Melbourne (AEDT)</option>
+              </select>
+              <small>Timezone for timestamps and alerts</small>
             </div>
           </div>
         </div>

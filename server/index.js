@@ -229,6 +229,7 @@ app.get('/api/settings', (req, res) => {
     webhook_url: process.env.WEBHOOK_URL || '',
     check_interval: parseInt(process.env.CHECK_INTERVAL) || 60000,
     timeout: parseInt(process.env.TIMEOUT) || 5000,
+    timezone: process.env.TIMEZONE || 'UTC',
   };
   res.json(settings);
 });
@@ -271,6 +272,7 @@ TIMEOUT=${timeout}
     fs.writeFileSync(envPath, envContent);
 
     // Keep runtime config in sync without requiring a restart
+    process.env.TIMEZONE = timezone || 'UTC';
     process.env.EMAIL_ENABLED = String(email_enabled);
     process.env.EMAIL_HOST = email_host;
     process.env.EMAIL_PORT = String(email_port);
