@@ -9,7 +9,7 @@
 /coverage
 
 # production
-/build
+# /build - COMMENTED OUT: build directory must be committed for deployment
 
 # misc
 .DS_Store
