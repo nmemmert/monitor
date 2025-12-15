@@ -15,18 +15,33 @@ const PORT = process.env.PORT || 3001;
 // Helper to get timezone offset for SQL queries
 function getTimezoneOffset() {
   const tz = process.env.TIMEZONE || 'UTC';
+  
+  // Use Intl to get the actual offset for the target timezone
   const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(now);
   
-  // Calculate offset in hours (UTC - TZ to get the adjustment needed)
-  const utcDate = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
-  const tzDate = new Date(now.toLocaleString('en-US', { timeZone: tz }));
-  const offsetMs = utcDate - tzDate;  // Reversed: UTC minus TZ
-  const offsetHours = offsetMs / (1000 * 60 * 60);
+  // Parse the formatted parts to reconstruct the date in target timezone
+  const map = {};
+  parts.forEach(p => { map[p.type] = p.value; });
   
-  // Round to nearest 0.5 hours to handle daylight saving
-  const roundedHours = Math.round(offsetHours * 2) / 2;
+  const tzDate = new Date(`${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}Z`);
+  const utcDate = new Date(now.toISOString());
   
-  return roundedHours > 0 ? `+${roundedHours} hours` : `${roundedHours} hours`;
+  // Offset in seconds (how to adjust UTC to get local time)
+  const offsetSecs = (tzDate - utcDate) / 1000;
+  const offsetHours = offsetSecs / 3600;
+  
+  // Return as SQL offset string
+  return offsetHours > 0 ? `-${Math.abs(offsetHours)} hours` : `+${Math.abs(offsetHours)} hours`;
 }
 
 app.use(cors());
