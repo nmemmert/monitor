@@ -419,14 +419,15 @@ app.get('/api/resources/:id/history', (req, res) => {
 
 // Get all resources' check history for dashboard (optimized with aggregation)
 app.get('/api/history/overview', (req, res) => {
-  const { days = 7, page = 1, page: pageParam } = req.query;
+  const { days = 7, page = 1, page: pageParam, averaged = 'false' } = req.query;
+  console.log('History overview request:', { days, averaged, type: typeof averaged });
   // Resource pagination (number of resources per page)
   const pageLimit = parseInt(req.query.limit || 10);
   const currentPage = Math.max(1, parseInt(pageParam || page || 1));
   const offset = (currentPage - 1) * pageLimit;
 
   // Create cache key based on query parameters
-  const cacheKey = `history:days=${days}:page=${currentPage}:limit=${pageLimit}`;
+  const cacheKey = `history:days=${days}:page=${currentPage}:limit=${pageLimit}:averaged=${averaged}`;
   
   // Check cache first
   const cachedResult = cache.get(cacheKey);
@@ -458,23 +459,55 @@ app.get('/api/history/overview', (req, res) => {
     const uptime = stats.total > 0 ? (stats.up_count / stats.total * 100) : 0;
     const avgResponseTime = stats.avg_response || 0;
 
-    // Load ALL checks within the time window for accurate averaging
-    // (No limit; return full window so charts and stats are accurate)
-    const recentChecks = db.prepare(`
-      SELECT 
-        status,
-        response_time,
-        checked_at
-      FROM checks
-      WHERE resource_id = ? AND checked_at > datetime('now', ?)
-      ORDER BY checked_at ASC
-    `).all(resource.id, `-${days} days`);
+    let recentChecks = [];
+    if (String(averaged).toLowerCase() === 'true') {
+      console.log(`Using averaged mode for ${resource.name}`);
+      // Compute interval hours for bucketing (1h for 7 days, 3h for 14, 6h for 30+)
+      const intervalHours = days <= 7 ? 1 : days <= 14 ? 3 : 6;
+      // Use SQLite strftime to bucket by interval
+      recentChecks = db.prepare(`
+        WITH filtered AS (
+          SELECT status, response_time, checked_at
+          FROM checks
+          WHERE resource_id = ? AND checked_at > datetime('now', ?)
+        ), buckets AS (
+          SELECT 
+            status,
+            response_time,
+            checked_at,
+            (CAST(strftime('%s', checked_at) AS INTEGER) / (?*3600)) * (?*3600) AS bucket_ts
+          FROM filtered
+        )
+        SELECT 
+          datetime(bucket_ts, 'unixepoch') AS checked_at,
+          AVG(CASE WHEN status='up' THEN response_time END) AS avg_up_response,
+          SUM(CASE WHEN status='up' THEN 1 ELSE 0 END) AS up_count,
+          COUNT(*) AS total_count
+        FROM buckets
+        GROUP BY bucket_ts
+        ORDER BY bucket_ts ASC
+      `).all(resource.id, `-${days} days`, intervalHours, intervalHours).map(row => ({
+        status: row.up_count >= Math.ceil(row.total_count/2) ? 'up' : 'down',
+        response_time: Math.round(row.avg_up_response || 0),
+        checked_at: row.checked_at,
+      }));
+    } else {
+      console.log(`Using non-averaged mode for ${resource.name}`);
+      // Non-averaged: filter to window but cap to last 600 checks
+      recentChecks = db.prepare(`
+        SELECT status, response_time, checked_at
+        FROM checks
+        WHERE resource_id = ? AND checked_at > datetime('now', ?)
+        ORDER BY checked_at DESC
+        LIMIT 600
+      `).all(resource.id, `-${days} days`).reverse();
+    }
 
     return {
       id: resource.id,
       name: resource.name,
       type: resource.type,
-      checks: recentChecks.reverse(), // For charting in chronological order
+      checks: recentChecks, // Already chronological
       uptime: uptime.toFixed(2),
       avgResponseTime: avgResponseTime.toFixed(0),
     };
