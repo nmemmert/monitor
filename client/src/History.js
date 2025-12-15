@@ -29,7 +29,10 @@ function History() {
       setLoading(true);
       setError(null);
       try {
-        const response = await axios.get('/api/history/overview', { params: { days, page: currentPage, limit: pageSize } });
+        // Ask backend for averaged data (server-side bucketing) when enabled
+        const response = await axios.get('/api/history/overview', { 
+          params: { days, page: currentPage, limit: pageSize, averaged: showAveraged }
+        });
         console.log('History API Response:', response.data);
         
         let data = [];
@@ -56,7 +59,7 @@ function History() {
     };
 
     loadHistory();
-  }, [days, currentPage, pageSize]);
+  }, [days, currentPage, pageSize, showAveraged]);
 
   if (loading) return <div className="container">Loading history...</div>;
   if (error) return <div className="container">Error loading history: {error}</div>;
