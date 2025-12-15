@@ -422,13 +422,11 @@ app.get('/api/history/overview', (req, res) => {
   const { days = 7, page = 1, page: pageParam } = req.query;
   // Resource pagination (number of resources per page)
   const pageLimit = parseInt(req.query.limit || 10);
-  // Per-resource checks to return (independent of pageLimit)
-  const checksLimit = parseInt(req.query.checks_limit || 100);
   const currentPage = Math.max(1, parseInt(pageParam || page || 1));
   const offset = (currentPage - 1) * pageLimit;
 
   // Create cache key based on query parameters
-  const cacheKey = `history:days=${days}:page=${currentPage}:limit=${pageLimit}:checks=${checksLimit}`;
+  const cacheKey = `history:days=${days}:page=${currentPage}:limit=${pageLimit}`;
   
   // Check cache first
   const cachedResult = cache.get(cacheKey);
@@ -460,7 +458,8 @@ app.get('/api/history/overview', (req, res) => {
     const uptime = stats.total > 0 ? (stats.up_count / stats.total * 100) : 0;
     const avgResponseTime = stats.avg_response || 0;
 
-    // Only load recent checks for sparklines
+    // Load ALL checks within the time window for accurate averaging
+    // (No limit; return full window so charts and stats are accurate)
     const recentChecks = db.prepare(`
       SELECT 
         status,
@@ -468,9 +467,8 @@ app.get('/api/history/overview', (req, res) => {
         checked_at
       FROM checks
       WHERE resource_id = ? AND checked_at > datetime('now', ?)
-      ORDER BY checked_at DESC
-      LIMIT ?
-    `).all(resource.id, `-${days} days`, checksLimit);
+      ORDER BY checked_at ASC
+    `).all(resource.id, `-${days} days`);
 
     return {
       id: resource.id,
