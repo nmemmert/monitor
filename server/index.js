@@ -183,8 +183,9 @@ app.get('/api/dashboard', (req, res) => {
       WHERE resource_id = ? AND resolved_at IS NULL
     `).get(resource.id);
 
+    const tzOffset = getTimezoneOffset();
     const recentChecks = db.prepare(`
-      SELECT response_time, status, checked_at
+      SELECT response_time, status, datetime(checked_at, '${tzOffset}') as checked_at
       FROM checks
       WHERE resource_id = ?
       ORDER BY checked_at DESC
@@ -407,6 +408,7 @@ app.get('/api/resources/:id/history', (req, res) => {
     WHERE resource_id = ? AND checked_at > datetime('now', ?)
   `).get(id, `-${days} days`);
 
+  const tzOffset = getTimezoneOffset();
   const checks = db.prepare(`
     SELECT 
       id,
@@ -415,7 +417,7 @@ app.get('/api/resources/:id/history', (req, res) => {
       status_code,
       error_message,
       details,
-      checked_at
+      datetime(checked_at, '${tzOffset}') as checked_at
     FROM checks
     WHERE resource_id = ? AND checked_at > datetime('now', ?)
     ORDER BY checked_at DESC
