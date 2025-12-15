@@ -16,16 +16,17 @@ const PORT = process.env.PORT || 3001;
 function getTimezoneOffset() {
   const tz = process.env.TIMEZONE || 'UTC';
   const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' });
-  const parts = formatter.formatToParts(now);
   
-  // Calculate offset in hours
+  // Calculate offset in hours (UTC - TZ to get the adjustment needed)
   const utcDate = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
   const tzDate = new Date(now.toLocaleString('en-US', { timeZone: tz }));
-  const offsetMs = tzDate - utcDate;
+  const offsetMs = utcDate - tzDate;  // Reversed: UTC minus TZ
   const offsetHours = offsetMs / (1000 * 60 * 60);
   
-  return offsetHours > 0 ? `+${Math.abs(offsetHours)} hours` : `${offsetHours} hours`;
+  // Round to nearest 0.5 hours to handle daylight saving
+  const roundedHours = Math.round(offsetHours * 2) / 2;
+  
+  return roundedHours > 0 ? `+${roundedHours} hours` : `${roundedHours} hours`;
 }
 
 app.use(cors());
