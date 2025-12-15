@@ -22,11 +22,12 @@ export const formatLocalTime = (timestamp, options = {}) => {
   let timeZone;
   try {
     const cachedSettings = localStorage.getItem('serverTimezone');
-    if (cachedSettings && cachedSettings !== 'null' && cachedSettings !== 'undefined') {
-      timeZone = cachedSettings;
+    if (cachedSettings && cachedSettings !== 'null' && cachedSettings !== 'undefined' && cachedSettings.trim() !== '') {
+      // Remove any quotes that might be in the string
+      timeZone = cachedSettings.replace(/^["']|["']$/g, '').trim();
     }
   } catch (e) {
-    // Ignore errors
+    console.error('Error reading serverTimezone from localStorage:', e);
   }
   
   const defaultOptions = {
@@ -41,6 +42,9 @@ export const formatLocalTime = (timestamp, options = {}) => {
   
   if (timeZone) {
     defaultOptions.timeZone = timeZone;
+    console.log('Formatting timestamp with timezone:', timeZone, 'Original:', timestamp, 'Result:', date.toLocaleString('en-US', defaultOptions));
+  } else {
+    console.warn('No server timezone found in localStorage, using browser default');
   }
   
   return date.toLocaleString('en-US', { ...defaultOptions, ...options });
