@@ -279,7 +279,16 @@ class MonitorService {
 
   getLastCheck(resourceId) {
     return db.prepare(`
-      SELECT * FROM checks 
+      SELECT 
+        id,
+        resource_id,
+        status,
+        response_time,
+        status_code,
+        error_message,
+        details,
+        REPLACE(checked_at, ' ', 'T') || 'Z' AS checked_at
+      FROM checks 
       WHERE resource_id = ? 
       ORDER BY checked_at DESC 
       LIMIT 1
@@ -313,7 +322,16 @@ class MonitorService {
 
   getResourceStats(resourceId, hours = 24) {
     const checks = db.prepare(`
-      SELECT * FROM checks 
+      SELECT 
+        id,
+        resource_id,
+        status,
+        response_time,
+        status_code,
+        error_message,
+        details,
+        REPLACE(checked_at, ' ', 'T') || 'Z' AS checked_at
+      FROM checks 
       WHERE resource_id = ? 
       AND checked_at >= datetime('now', '-' || ? || ' hours')
       ORDER BY checked_at ASC
