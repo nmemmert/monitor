@@ -20,6 +20,7 @@ db.exec(`
     check_interval INTEGER DEFAULT 60000,
     timeout INTEGER DEFAULT 5000,
     enabled INTEGER DEFAULT 1,
+    maintenance_mode INTEGER DEFAULT 0,
     group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -74,6 +75,15 @@ try {
   db.prepare("ALTER TABLE resources ADD COLUMN group_id INTEGER").run();
 } catch (err) {
   // Column already exists
+}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN maintenance_mode INTEGER DEFAULT 0").run();
+  console.log('[DB] Added maintenance_mode column to resources');
+} catch (err) {
+  if (err.message.includes('duplicate')) {
+    console.log('[DB] maintenance_mode column already exists');
+  }
 }
 
 try {

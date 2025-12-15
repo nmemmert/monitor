@@ -41,6 +41,7 @@ function Dashboard() {
     cert_expiry_days: 30,
     sla_target: 99.9,
     email_to: '',
+    maintenance_mode: false,
   });
   const [groupData, setGroupData] = useState({ name: '', description: '' });
   const navigate = useNavigate();
@@ -79,7 +80,22 @@ function Dashboard() {
     try {
       await axios.post('/api/resources', formData);
       setShowModal(false);
-      setFormData({ name: '', url: '', type: 'http', check_interval: 60000, timeout: 5000 });
+      setFormData({
+        name: '',
+        url: '',
+        type: 'http',
+        check_interval: 60000,
+        timeout: 5000,
+        group_id: null,
+        http_keyword: '',
+        http_headers: '',
+        quiet_hours_start: '',
+        quiet_hours_end: '',
+        cert_expiry_days: 30,
+        sla_target: 99.9,
+        email_to: '',
+        maintenance_mode: false,
+      });
       loadResources();
     } catch (error) {
       console.error('Error creating resource:', error);
@@ -454,6 +470,16 @@ function Dashboard() {
                 </div>
               </div>
 
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  id="maintenance_mode_new"
+                  checked={!!formData.maintenance_mode}
+                  onChange={(e) => setFormData({ ...formData, maintenance_mode: e.target.checked })}
+                />
+                <label htmlFor="maintenance_mode_new" style={{ margin: 0 }}>Start in maintenance mode (no alerts sent)</label>
+              </div>
+
               <div className="form-group">
                 <label>SLA Target (%)</label>
                 <input
@@ -604,6 +630,16 @@ function Dashboard() {
                     onChange={(e) => setEditData({ ...editData, quiet_hours_end: e.target.value })}
                   />
                 </div>
+              </div>
+
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  id="maintenance_mode_edit"
+                  checked={!!editData.maintenance_mode}
+                  onChange={(e) => setEditData({ ...editData, maintenance_mode: e.target.checked })}
+                />
+                <label htmlFor="maintenance_mode_edit" style={{ margin: 0 }}>Maintenance mode (suppress alerts)</label>
               </div>
 
               <div className="form-group">
@@ -772,6 +808,18 @@ function ResourceDetail() {
     }
   };
 
+  const toggleMaintenance = async () => {
+    try {
+      await axios.put(`/api/resources/${id}`, {
+        ...resource,
+        maintenance_mode: !resource.maintenance_mode,
+      });
+      loadResource();
+    } catch (error) {
+      console.error('Error updating maintenance mode:', error);
+    }
+  };
+
   if (loading) return <div className="container">Loading...</div>;
   if (!resource) return <div className="container">Resource not found</div>;
 
@@ -796,6 +844,9 @@ function ResourceDetail() {
             <button className="btn" onClick={toggleEnabled}>
               {resource.enabled ? 'Disable' : 'Enable'}
             </button>
+            <button className="btn btn-secondary" onClick={toggleMaintenance}>
+              {resource.maintenance_mode ? 'End Maintenance' : 'Start Maintenance'}
+            </button>
             <button className="btn btn-danger" onClick={handleDelete}>
               Delete
             </button>
@@ -804,6 +855,11 @@ function ResourceDetail() {
 
         {resource.hasActiveIncident && (
           <div className="incident-badge">⚠️ Active Incident - Resource is currently DOWN</div>
+        )}
+        {resource.maintenance_mode && (
+          <div className="incident-badge" style={{ background: '#fff3cd', color: '#856404', borderColor: '#ffeeba' }}>
+            🛠️ Maintenance mode active — alerts are suppressed
+          </div>
         )}
 
         <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginTop: '2rem' }}>

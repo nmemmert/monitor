@@ -49,7 +49,11 @@ class Scheduler {
             LIMIT 12
           `).all(resource.id);
           stats.recentChecks = recentChecks.reverse();
-          await notificationService.sendAlert(resource, incident, stats);
+          if (resource.maintenance_mode) {
+            console.log(`Resource ${resource.name} in maintenance; skipping alert`);
+          } else {
+            await notificationService.sendAlert(resource, incident, stats);
+          }
         }
 
         console.log(`Checked ${resource.name}: ${result.status} (${result.response_time}ms)`);
