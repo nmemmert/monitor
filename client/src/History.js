@@ -100,9 +100,8 @@ function History() {
       ) : (
         <div>
           {historyData.map((resource) => {
-            const chartData = showAveraged 
-              ? prepareAveragedChartData(resource.checks || [], days)
-              : prepareChartData(resource.checks || []);
+            // Server already handles averaging when averaged=true is passed
+            const chartData = prepareChartData(resource.checks || []);
 
             return (
               <div key={resource.id} className="detail-section" style={{ marginBottom: '3rem', background: '#fff', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
@@ -267,69 +266,6 @@ function prepareChartData(checks) {
       statusNumeric: check.status === 'up' ? 1 : 0,
     };
   });
-}
-
-function prepareAveragedChartData(checks, days) {
-  if (!checks || checks.length === 0) return [];
-  
-  // Determine interval based on days
-  let intervalHours;
-  if (days <= 7) {
-    intervalHours = 1; // Hourly for 7 days
-  } else if (days <= 14) {
-    intervalHours = 3; // Every 3 hours for 14 days
-  } else {
-    intervalHours = 6; // Every 6 hours for 30+ days
-  }
-  
-  const intervalMs = intervalHours * 60 * 60 * 1000;
-  const now = Date.now();
-  const startTime = now - (days * 24 * 60 * 60 * 1000);
-  
-  // Group checks into time buckets
-  const buckets = new Map();
-  
-  checks.forEach(check => {
-    const checkTime = new Date(check.checked_at).getTime();
-    if (checkTime < startTime) return;
-    
-    const bucketKey = Math.floor(checkTime / intervalMs) * intervalMs;
-    
-    if (!buckets.has(bucketKey)) {
-      buckets.set(bucketKey, {
-        checks: [],
-        upCount: 0,
-        totalResponse: 0,
-      });
-    }
-    
-    const bucket = buckets.get(bucketKey);
-    bucket.checks.push(check);
-    if (check.status === 'up') {
-      bucket.upCount++;
-      bucket.totalResponse += check.response_time || 0;
-    }
-  });
-  
-  // Convert buckets to chart data
-  const chartData = Array.from(buckets.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([timestamp, data]) => {
-      const avgResponse = data.upCount > 0 ? Math.round(data.totalResponse / data.upCount) : 0;
-      const uptime = Math.round((data.upCount / data.checks.length) * 100);
-      
-      const label = formatChartTime(timestamp);
-      
-      return {
-        label,
-        responseTime: avgResponse,
-        statusNumeric: uptime / 100,
-        status: uptime > 50 ? 'up' : 'down',
-        uptime: uptime,
-      };
-    });
-  
-  return chartData;
 }
 
 export default History;
