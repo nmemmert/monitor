@@ -15,10 +15,11 @@ const PORT = process.env.PORT || 3001;
 // Helper to get timezone offset for SQL queries
 function getTimezoneOffset() {
   const tz = process.env.TIMEZONE || 'UTC';
+  if (tz === 'UTC') return '0 hours';
   
-  // Use Intl to get the actual offset for the target timezone
+  // Use Intl to get the actual offset
   const now = new Date();
-  const parts = new Intl.DateTimeFormat('en-US', {
+  const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
     year: 'numeric',
     month: '2-digit',
@@ -27,21 +28,48 @@ function getTimezoneOffset() {
     minute: '2-digit',
     second: '2-digit',
     hour12: false
-  }).formatToParts(now);
+  });
   
-  // Parse the formatted parts to reconstruct the date in target timezone
-  const map = {};
-  parts.forEach(p => { map[p.type] = p.value; });
+  const parts = formatter.formatToParts(now);
+  const values = {};
+  parts.forEach(({ type, value }) => { values[type] = value; });
   
-  const tzDate = new Date(`${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}Z`);
-  const utcDate = new Date(now.toISOString());
+  // Create a date string in the target timezone and parse it
+  const tzDateStr = `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}`;
+  const tzDate = new Date(tzDateStr); // Parsed as local browser time (wrong - just for comparison)
   
-  // Offset in seconds (how to adjust UTC to get local time)
-  const offsetSecs = (tzDate - utcDate) / 1000;
-  const offsetHours = offsetSecs / 3600;
+  // Better approach: get offset by comparing UTC formatted time with TZ formatted time
+  const utcFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
   
-  // Return as SQL offset string
-  return offsetHours > 0 ? `-${Math.abs(offsetHours)} hours` : `+${Math.abs(offsetHours)} hours`;
+  const tzFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  
+  const utcTime = utcFormatter.format(now);
+  const tzTime = tzFormatter.format(now);
+  
+  const utcHour = parseInt(utcTime.split(':')[0]);
+  const tzHour = parseInt(tzTime.split(':')[0]);
+  
+  // Calculate the offset
+  let offsetHours = tzHour - utcHour;
+  if (offsetHours > 12) offsetHours -= 24;
+  if (offsetHours < -12) offsetHours += 24;
+  
+  console.log(`Timezone offset for ${tz}: ${offsetHours} hours (UTC ${utcHour}:00, TZ ${tzHour}:00)`);
+  
+  // SQL datetime() function: negative means subtract, positive means add
+  return offsetHours > 0 ? `+${offsetHours} hours` : `${offsetHours} hours`;
 }
 
 app.use(cors());
