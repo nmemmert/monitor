@@ -474,19 +474,19 @@ app.get('/api/history/overview', (req, res) => {
       
       // Use a reliable bucketing approach with Julian Day Numbers
       // Convert to julian day, multiply by 24 for hours, divide by intervalHours and round
-      const bucketCalc = `ROUND((julianday(checked_at) * 24) / ?) * ? / 24`;
+      const bucketExpr = `ROUND((julianday(checked_at) * 24) / ${intervalHours}) * ${intervalHours} / 24`;
       
       recentChecks = db.prepare(`
         SELECT 
-          datetime(ROUND((julianday(checked_at) * 24) / ?) * ? / 24) AS checked_at,
+          datetime(${bucketExpr}) AS checked_at,
           AVG(CASE WHEN status='up' THEN response_time ELSE NULL END) AS avg_up_response,
           SUM(CASE WHEN status='up' THEN 1 ELSE 0 END) AS up_count,
           COUNT(*) AS total_count
         FROM checks
         WHERE resource_id = ? AND checked_at > datetime('now', ?)
-        GROUP BY ROUND((julianday(checked_at) * 24) / ?) * ? / 24
+        GROUP BY ${bucketExpr}
         ORDER BY checked_at ASC
-      `).all(intervalHours, intervalHours, intervalHours, intervalHours, resource.id, `-${days} days`, intervalHours, intervalHours).map(row => ({
+      `).all(resource.id, `-${days} days`).map(row => ({
         status: row.up_count >= Math.ceil(row.total_count/2) ? 'up' : 'down',
         response_time: Math.round(row.avg_up_response || 0),
         checked_at: row.checked_at,
