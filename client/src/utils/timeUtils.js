@@ -11,11 +11,22 @@ export const getCurrentTimezone = () => {
 
 /**
  * Format a timestamp to local time string with timezone info
+ * Uses server timezone from localStorage if available, otherwise browser timezone
  */
 export const formatLocalTime = (timestamp, options = {}) => {
   if (!timestamp) return 'Never';
   
   const date = new Date(timestamp);
+  
+  // Try to get server timezone from settings API response (cached in localStorage)
+  let timeZone;
+  try {
+    const cachedSettings = localStorage.getItem('serverTimezone');
+    timeZone = cachedSettings || undefined; // Use browser TZ if not set
+  } catch (e) {
+    timeZone = undefined;
+  }
+  
   const defaultOptions = {
     year: 'numeric',
     month: 'short', 
@@ -23,7 +34,8 @@ export const formatLocalTime = (timestamp, options = {}) => {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    timeZoneName: 'short'
+    timeZoneName: 'short',
+    ...(timeZone && { timeZone })
   };
   
   return date.toLocaleString('en-US', { ...defaultOptions, ...options });

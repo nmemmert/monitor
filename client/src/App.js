@@ -801,6 +801,10 @@ function Navbar() {
     try {
       const response = await axios.get('/api/settings');
       setNotificationsConfigured(response.data.email_enabled || response.data.webhook_enabled);
+      // Cache server timezone for timestamp formatting
+      if (response.data.timezone) {
+        localStorage.setItem('serverTimezone', response.data.timezone);
+      }
     } catch (error) {
       console.error('Error checking notifications:', error);
     }
