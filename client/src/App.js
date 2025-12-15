@@ -169,7 +169,7 @@ function Dashboard() {
         onClick={(e) => !isEditing && !e.target.closest('.card-actions') && navigate(`/resource/${resource.id}`)}
       >
         <div className="resource-header">
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             {isEditing ? (
               <input
                 type="text"
@@ -180,7 +180,12 @@ function Dashboard() {
                 placeholder="Resource name"
               />
             ) : (
-              <h3 className="resource-name">{resource.name}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <h3 className="resource-name" style={{ margin: 0 }}>{resource.name}</h3>
+                {resource.maintenance_mode && (
+                  <span title="Maintenance mode" style={{ fontSize: '0.95rem' }}>🛠️</span>
+                )}
+              </div>
             )}
             <p className="resource-url">{resource.url}</p>
             <p className="resource-type">Type: {resource.type}</p>
@@ -196,7 +201,11 @@ function Dashboard() {
 
         <div className="resource-meta">
           <div>
-            <p className="stat-value small" style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); if (!isEditing) setEditingId(resource.id); }}>
+            <p
+              className="stat-value small"
+              style={{ cursor: 'pointer', color: resource.maintenance_mode ? '#ffc107' : undefined }}
+              onClick={(e) => { e.stopPropagation(); if (!isEditing) setEditingId(resource.id); }}
+            >
               {resource.uptime}%
             </p>
             <p className="stat-label">Uptime (24h)</p>
