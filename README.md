@@ -10,8 +10,6 @@ A comprehensive monitoring system for tracking the uptime and performance of you
 - 📝 **Incident Tracking** - Track when resources go down and recover
 - ⚙️ **Configurable Checks** - Set custom check intervals and timeouts
 - 🗄️ **Historical Data** - 7 days of check history with detailed statistics
-- 🌍 **Timezone Support** - All timestamps automatically display in your local timezone
-- 🐳 **Docker Support** - Pre-built images available on GitHub Container Registry
 
 ## Installation
 
@@ -28,40 +26,6 @@ The script will:
 - ✅ Configure firewall
 - ✅ Set up auto-start on boot
 - ✅ Guide you through email/webhook setup
-
-### Docker Installation (Recommended)
-
-The easiest way to get SkyWatch running with Docker:
-
-#### Prerequisites
-- Docker and Docker Compose
-
-#### Setup
-
-1. Clone the repository:
-```bash
-git clone https://github.com/nmemmert/monitor.git
-cd monitor
-```
-
-2. Create and configure your `.env` file:
-```bash
-cp .env.example .env
-# Edit .env with your settings
-```
-
-3. Start with Docker Compose:
-```bash
-docker-compose up -d
-```
-
-The application will be available at `http://localhost:3001`
-
-See [DOCKER.md](./DOCKER.md) for detailed Docker documentation including:
-- Building images locally
-- Pushing to Docker registries
-- Running with custom ports
-- Health checks and monitoring
 
 ### Manual Installation
 
@@ -186,33 +150,27 @@ nano .env  # Configure your settings
 npm start
 ```
 
-### Option 3: Docker Deployment (Recommended)
+### Option 3: Docker Deployment (Advanced)
 
-Docker setup is now fully integrated! See [DOCKER.md](./DOCKER.md) for complete documentation.
-
-Quick start:
-```bash
-# Local deployment with Docker Compose
-docker-compose up -d
-
-# Or using pre-built image from GitHub Container Registry
-docker pull ghcr.io/nmemmert/monitor:latest
-docker run -d \
-  -p 3001:3001 \
-  --name skywatch \
-  -e PORT=3001 \
-  -e NODE_ENV=production \
-  ghcr.io/nmemmert/monitor:latest
-
-# To add email/webhook notifications, create a .env file and mount it:
-docker run -d \
-  -p 3001:3001 \
-  --name skywatch \
-  --env-file .env \
-  ghcr.io/nmemmert/monitor:latest
+Create `Dockerfile` in project root:
+```dockerfile
+FROM node:18
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+WORKDIR /app/client
+RUN npm install && npm run build
+WORKDIR /app
+EXPOSE 3001
+CMD ["node", "server/index.js"]
 ```
 
-**Note:** The Docker image is automatically built and published to GitHub Container Registry on every push to the main branch.
+Then deploy:
+```bash
+docker build -t resource-monitor .
+docker run -d -p 3001:3001 -v ./data:/app/data --name monitor resource-monitor
+```
 
 ### Deployment Workflow (Critical!)
 
@@ -350,6 +308,56 @@ server {
    - **Check Interval**: How often to check (in milliseconds)
    - **Timeout**: Maximum time to wait for response
 
+### Viewing History
+
+The **History** page displays detailed check data for all monitored resources with interactive graphs and performance metrics.
+
+#### Time Window Selection
+
+- **7 Days** - Default view, showing hourly averages (168 data points)
+- **14 Days** - Shows 3-hourly averages (112 data points)
+- **30 Days** - Shows 6-hourly averages (120 data points)
+
+#### Show Averages Toggle
+
+The **"Show Averages"** checkbox controls how data is displayed:
+
+**When Enabled (Default):**
+- Data is **bucketed and averaged** server-side
+- 7 Days: 1-hour buckets (168 points)
+- 14 Days: 3-hour buckets (112 points)
+- 30 Days: 6-hour buckets (120 points)
+- **Benefit**: Much faster page load, cleaner graphs with averaged response times
+- **Use when**: Viewing trends over time
+
+**When Disabled:**
+- Shows up to 600 **raw individual checks** within the selected time window
+- **Benefit**: See exact check-by-check performance, spot patterns
+- **Use when**: Debugging specific issues, investigating downtime events
+
+#### Graph Display
+
+Each resource shows:
+- **Response Time (Blue Line)** - Average response time in milliseconds
+- **Status Bars (Green/Red)** - 
+  - 🟢 Green = Resource was UP during that period
+  - 🔴 Red = Resource was DOWN during that period
+
+#### Statistics
+
+Below each graph:
+- **Total Checks** - Number of checks performed in the time window
+- **Uptime %** - Percentage of checks that were successful (green = higher is better)
+- **Avg Response** - Average response time in milliseconds
+- **Successful Checks** - Count of successful vs total checks (e.g., 5592/5593)
+
+#### Performance Notes
+
+- **Averaged mode** is optimized for performance and uses server-side aggregation
+- **Non-averaged mode** can be slower with large datasets (>600 checks)
+- Cache is updated every 2 minutes for averaged data
+- Each time window (7/14/30 days) has separate cache entries
+
 ## API Endpoints
 
 - `GET /api/resources` - List all resources
@@ -363,50 +371,21 @@ server {
 ## Project Structure
 
 ```
-monitor/
+mon/
 ├── server/              # Backend Node.js/Express
 │   ├── index.js        # Main server file
 │   ├── database.js     # SQLite database setup
 │   ├── monitorService.js
 │   ├── notificationService.js
-│   ├── scheduler.js
-│   └── cache.js
+│   └── scheduler.js
 ├── client/             # React frontend
 │   └── src/
 │       ├── App.js      # Main React component
-│       ├── History.js  # Historical data view
-│       ├── SLA.js      # SLA dashboard
-│       ├── SettingsWizard.js
-│       ├── utils/
-│       │   └── timeUtils.js  # Timezone formatting utilities
 │       └── App.css     # Styles
 ├── data/               # SQLite database (auto-created)
 ├── .env                # Environment configuration
-├── Dockerfile          # Docker image definition
-├── docker-compose.yml  # Docker Compose configuration
 └── package.json
 ```
-
-## Technology Stack
-
-**Backend:**
-- Node.js with Express
-- SQLite (better-sqlite3) for data storage
-- node-cron for scheduled monitoring
-- Axios for HTTP checks
-- Nodemailer for email notifications
-- WebSocket (ws) for real-time updates
-
-**Frontend:**
-- React 19
-- React Router for navigation
-- Recharts for data visualization
-- Axios for API calls
-
-**DevOps:**
-- Docker with multi-stage builds
-- GitHub Actions for CI/CD
-- GitHub Container Registry (GHCR) for image hosting
 
 ## Configuration
 
