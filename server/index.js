@@ -419,13 +419,16 @@ app.get('/api/resources/:id/history', (req, res) => {
 
 // Get all resources' check history for dashboard (optimized with aggregation)
 app.get('/api/history/overview', (req, res) => {
-  const { days = 7, limit = 12, page = 1, page: pageParam } = req.query;
-  const pageLimit = parseInt(req.query.limit || 10); // Pagination limit (per page)
+  const { days = 7, page = 1, page: pageParam } = req.query;
+  // Resource pagination (number of resources per page)
+  const pageLimit = parseInt(req.query.limit || 10);
+  // Per-resource checks to return (independent of pageLimit)
+  const checksLimit = parseInt(req.query.checks_limit || 100);
   const currentPage = Math.max(1, parseInt(pageParam || page || 1));
   const offset = (currentPage - 1) * pageLimit;
 
   // Create cache key based on query parameters
-  const cacheKey = `history:days=${days}:page=${currentPage}:limit=${pageLimit}`;
+  const cacheKey = `history:days=${days}:page=${currentPage}:limit=${pageLimit}:checks=${checksLimit}`;
   
   // Check cache first
   const cachedResult = cache.get(cacheKey);
@@ -467,7 +470,7 @@ app.get('/api/history/overview', (req, res) => {
       WHERE resource_id = ? AND checked_at > datetime('now', ?)
       ORDER BY checked_at DESC
       LIMIT ?
-    `).all(resource.id, `-${days} days`, parseInt(limit));
+    `).all(resource.id, `-${days} days`, checksLimit);
 
     return {
       id: resource.id,
