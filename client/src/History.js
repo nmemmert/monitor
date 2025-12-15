@@ -166,6 +166,20 @@ function History() {
                           name="Status"
                           opacity={0.5}
                           isAnimationActive={false}
+                          shape={(props) => {
+                            const { x, y, width, height, payload } = props;
+                            const color = payload.status === 'up' ? '#4caf50' : '#f44336';
+                            return (
+                              <rect
+                                x={x}
+                                y={y}
+                                width={width}
+                                height={height}
+                                fill={color}
+                                opacity={0.5}
+                              />
+                            );
+                          }}
                         />
                       </ComposedChart>
                     </ResponsiveContainer>
