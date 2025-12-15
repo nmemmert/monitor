@@ -738,6 +738,44 @@ app.post('/api/cache/clear', (req, res) => {
   res.json({ message: 'Cache cleared successfully' });
 });
 
+// Debug endpoint to check timezone offset
+app.get('/api/debug/timezone', (req, res) => {
+  const offset = getTimezoneOffset();
+  const now = new Date();
+  const tz = process.env.TIMEZONE || 'UTC';
+  
+  // Also show what the formatted times are
+  const utcFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+  
+  const tzFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+  
+  res.json({
+    timezone: tz,
+    offset: offset,
+    utcTime: utcFormatter.format(now),
+    localTime: tzFormatter.format(now),
+    serverTime: now.toISOString()
+  });
+});
+
 // Serve React app with proper MIME types
 const mimeTypes = {
   '.js': 'application/javascript',
