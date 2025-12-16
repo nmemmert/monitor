@@ -81,7 +81,13 @@ class Scheduler {
       SELECT * FROM resources WHERE enabled = 1
     `).all();
 
-    for (const resource of resources) {
+    // Stagger checks to avoid thundering herd
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const jitter = (maxMs = 1500) => Math.floor(Math.random() * maxMs);
+
+    const baseSpacingMs = 250; // spread starts in 250ms increments
+    const tasks = resources.map((resource, index) => (async () => {
+      await sleep(index * baseSpacingMs + jitter());
       try {
         const result = await monitorService.checkResource(resource);
         monitorService.saveCheck(result);
@@ -100,9 +106,7 @@ class Scheduler {
             LIMIT 12
           `).all(resource.id);
           stats.recentChecks = recentChecks.reverse();
-          if (resource.maintenance_mode) {
-            console.log(`Resource ${resource.name} in maintenance; skipping alert`);
-          } else {
+          if (!resource.maintenance_mode) {
             await notificationService.sendAlert(resource, incident, stats);
           }
         }
@@ -111,7 +115,9 @@ class Scheduler {
       } catch (error) {
         console.error(`Error checking ${resource.name}:`, error.message);
       }
-    }
+    })());
+
+    await Promise.allSettled(tasks);
 
     // Broadcast updated dashboard to all connected WebSocket clients
     if (global.broadcastDashboardUpdate) {
