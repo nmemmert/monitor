@@ -318,14 +318,25 @@ app.get('/api/dashboard', (req, res) => {
 // Get incidents
 app.get('/api/incidents', (req, res) => {
   const incidents = db.prepare(`
-    SELECT i.*, r.name as resource_name, r.url as resource_url
+    SELECT
+      i.id,
+      i.resource_id,
+      REPLACE(i.started_at, ' ', 'T') || 'Z' AS started_at,
+      CASE
+        WHEN i.resolved_at IS NULL THEN NULL
+        ELSE REPLACE(i.resolved_at, ' ', 'T') || 'Z'
+      END AS resolved_at,
+      i.description,
+      i.failed_check_count,
+      r.name as resource_name,
+      r.url as resource_url
     FROM incidents i
     JOIN resources r ON i.resource_id = r.id
     ORDER BY i.started_at DESC
-    LIMIT 50
+    LIMIT 100
   `).all();
 
-  res.json(incidents);
+  res.json({ incidents });
 });
 
 // Get settings
@@ -1155,6 +1166,28 @@ app.delete('/api/maintenance-windows/:id', (req, res) => {
   } catch (error) {
     console.error('Error deleting maintenance window:', error);
     res.status(500).json({ error: 'Failed to delete maintenance window' });
+  }
+});
+
+// Get all maintenance windows
+app.get('/api/maintenance-windows', (req, res) => {
+  try {
+    const windows = db.prepare(`
+      SELECT
+        id,
+        resource_id,
+        REPLACE(start_time, ' ', 'T') || 'Z' AS start_time,
+        REPLACE(end_time, ' ', 'T') || 'Z' AS end_time,
+        reason
+      FROM maintenance_windows
+      ORDER BY start_time DESC
+      LIMIT 100
+    `).all();
+
+    res.json({ maintenanceWindows: windows });
+  } catch (error) {
+    console.error('Error getting maintenance windows:', error);
+    res.status(500).json({ error: 'Failed to get maintenance windows' });
   }
 });
 

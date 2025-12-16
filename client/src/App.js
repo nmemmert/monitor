@@ -6,6 +6,7 @@ import './App.css';
 import SettingsWizard from './SettingsWizard';
 import History from './History';
 import SLA from './SLA';
+import Status from './Status';
 import { formatLocalTime, formatChartTime } from './utils/timeUtils';
 
 // Simple duration formatter for incident spans
@@ -1647,6 +1648,7 @@ function App() {
           <Route path="/history" element={<History />} />
           <Route path="/sla" element={<SLA />} />
           <Route path="/settings" element={<div className="container"><SettingsWizard /></div>} />
+          <Route path="/status" element={<Status />} />
         </Routes>
       </div>
     </Router>
