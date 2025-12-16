@@ -313,7 +313,10 @@ class MonitorService {
 
   handleIncident(resourceId, isDown) {
     const resource = db.prepare('SELECT * FROM resources WHERE id = ?').get(resourceId);
-    const threshold = resource?.consecutive_failures_threshold || 1;
+    
+    // Get incident failure threshold from settings (default 10)
+    const setting = db.prepare("SELECT value FROM settings WHERE key = 'incident_failure_threshold'").get();
+    const threshold = parseInt(setting?.value || '10');
     
     const activeIncident = db.prepare(`
       SELECT * FROM incidents 
@@ -323,7 +326,7 @@ class MonitorService {
     if (isDown) {
       // Check consecutive failures
       const recentChecks = db.prepare(`
-        SELECT status FROM checks
+        SELECT status, error_message, checked_at FROM checks
         WHERE resource_id = ?
         ORDER BY checked_at DESC
         LIMIT ?
@@ -334,14 +337,22 @@ class MonitorService {
 
       // Only trigger incident if we've hit the threshold
       if (consecutiveFailures >= threshold && !activeIncident) {
+        // Build description with failure reason and first failed check timestamp
+        const lastCheck = recentChecks[0];
+        const firstFailedCheck = recentChecks[recentChecks.length - 1];
+        
+        const reason = lastCheck?.error_message || 'Service returned down status';
+        const description = `Resource down after ${consecutiveFailures} consecutive failed checks.\nReason: ${reason}\nFirst failure: ${firstFailedCheck?.checked_at}`;
+
         const stmt = db.prepare(`
-          INSERT INTO incidents (resource_id) VALUES (?)
+          INSERT INTO incidents (resource_id, description, failed_check_count) VALUES (?, ?, ?)
         `);
-        const result = stmt.run(resourceId);
+        const result = stmt.run(resourceId, description, consecutiveFailures);
         return { 
           type: 'started', 
           incident: true,
-          consecutiveFailures
+          consecutiveFailures,
+          description
         };
       }
     } else if (!isDown && activeIncident) {

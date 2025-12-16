@@ -16,21 +16,22 @@ function SettingsWizard() {
     check_interval: 60000,
     timeout: 5000,
     timezone: 'UTC',
-      retention_days: 7,
-      auto_cleanup_enabled: false,
-      consecutive_failures: 3,
-      grace_period: 300,
-      downtime_threshold: 600,
-      alert_retry_count: 3,
-      alert_retry_delay: 60,
-      fallback_webhook: '',
-      global_quiet_hours_start: '',
-      global_quiet_hours_end: '',
-      escalation_hours: 4,
-      default_sort: 'name',
-      items_per_page: 20,
-      refresh_interval: 5000,
-      theme: 'light',
+    retention_days: 7,
+    auto_cleanup_enabled: false,
+    consecutive_failures: 3,
+    grace_period: 300,
+    downtime_threshold: 600,
+    alert_retry_count: 3,
+    alert_retry_delay: 60,
+    fallback_webhook: '',
+    global_quiet_hours_start: '',
+    global_quiet_hours_end: '',
+    escalation_hours: 4,
+    default_sort: 'name',
+    items_per_page: 20,
+    refresh_interval: 5000,
+    theme: 'light',
+    incident_failure_threshold: 10,
   });
 
   const [testResult, setTestResult] = useState(null);
@@ -351,6 +352,20 @@ function SettingsWizard() {
                 <option value="Australia/Melbourne">Australia/Melbourne (AEDT)</option>
               </select>
               <small>Timezone for timestamps and alerts</small>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Incident Failure Threshold</label>
+              <input
+                type="number"
+                value={settings.incident_failure_threshold || 10}
+                onChange={(e) => setSettings({ ...settings, incident_failure_threshold: parseInt(e.target.value) })}
+                min="1"
+                max="100"
+              />
+              <small>Number of consecutive failed checks before automatically creating an incident (default: 10)</small>
             </div>
           </div>
         </div>

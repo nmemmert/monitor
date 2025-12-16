@@ -521,6 +521,36 @@ app.post('/api/settings/retention', (req, res) => {
   }
 });
 
+// Get incident failure threshold
+app.get('/api/settings/incident-threshold', (req, res) => {
+  try {
+    const setting = db.prepare("SELECT value FROM settings WHERE key = 'incident_failure_threshold'").get();
+    res.json({ incident_failure_threshold: parseInt(setting?.value || '10') });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get incident threshold' });
+  }
+});
+
+// Update incident failure threshold
+app.post('/api/settings/incident-threshold', (req, res) => {
+  const { incident_failure_threshold } = req.body;
+  
+  if (!incident_failure_threshold || incident_failure_threshold < 1 || incident_failure_threshold > 100) {
+    return res.status(400).json({ error: 'Threshold must be between 1 and 100' });
+  }
+
+  try {
+    db.prepare(`
+      INSERT INTO settings (key, value) VALUES ('incident_failure_threshold', ?)
+      ON CONFLICT(key) DO UPDATE SET value = ?
+    `).run(String(incident_failure_threshold), String(incident_failure_threshold));
+    
+    res.json({ message: 'Incident threshold updated', incident_failure_threshold });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update incident threshold' });
+  }
+});
+
 // Get archived checks for a resource
 app.get('/api/resources/:id/archived', (req, res) => {
   const { id } = req.params;

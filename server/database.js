@@ -245,9 +245,30 @@ try {
   }
 }
 
-// Settings for data retention
+// Add description column to incidents for incident summaries
+try {
+  db.prepare("ALTER TABLE incidents ADD COLUMN description TEXT").run();
+  console.log('[DB] Added description column to incidents');
+} catch (err) {
+  if (err.message.includes('duplicate')) {
+    console.log('[DB] description column already exists');
+  }
+}
+
+// Add failed_check_count to incidents to track consecutive failures at creation time
+try {
+  db.prepare("ALTER TABLE incidents ADD COLUMN failed_check_count INTEGER DEFAULT 0").run();
+  console.log('[DB] Added failed_check_count column to incidents');
+} catch (err) {
+  if (err.message.includes('duplicate')) {
+    console.log('[DB] failed_check_count column already exists');
+  }
+}
+
+// Settings for data retention and incident thresholds
 try {
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('retention_days', '30')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('incident_failure_threshold', '10')").run();
 } catch (err) {}
 
 // Helpful indexes for time-range queries
