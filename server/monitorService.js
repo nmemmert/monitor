@@ -490,7 +490,9 @@ class MonitorService {
         CASE
           WHEN resolved_at IS NULL THEN NULL
           ELSE REPLACE(resolved_at, ' ', 'T') || 'Z'
-        END AS resolved_at
+        END AS resolved_at,
+        description,
+        failed_check_count
       FROM incidents
       WHERE ${clauses.join(' AND ')}
       ORDER BY started_at ${order}

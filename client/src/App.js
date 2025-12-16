@@ -992,6 +992,7 @@ function ResourceDetail() {
   const [incidentsPage, setIncidentsPage] = useState(0);
   const incidentsLimit = 10;
   const [incidentsSort, setIncidentsSort] = useState('desc');
+  const [expandedIncidentId, setExpandedIncidentId] = useState(null);
 
   const [sla, setSla] = useState(null);
   const [slaLoading, setSlaLoading] = useState(false);
@@ -1358,27 +1359,49 @@ function ResourceDetail() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Started</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Resolved</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Duration</th>
+              <th style={{ padding: '0.75rem', textAlign: 'left', width: '25%' }}>Started</th>
+              <th style={{ padding: '0.75rem', textAlign: 'left', width: '25%' }}>Resolved</th>
+              <th style={{ padding: '0.75rem', textAlign: 'left', width: '15%' }}>Duration</th>
+              <th style={{ padding: '0.75rem', textAlign: 'left', width: '35%' }}>Reason</th>
             </tr>
           </thead>
           <tbody>
             {incidentsLoading ? (
-              <tr><td colSpan="3" style={{ padding: '0.75rem' }}>Loading incidents...</td></tr>
+              <tr><td colSpan="4" style={{ padding: '0.75rem' }}>Loading incidents...</td></tr>
             ) : incidents.length === 0 ? (
-              <tr><td colSpan="3" style={{ padding: '0.75rem' }}>No incidents found</td></tr>
+              <tr><td colSpan="4" style={{ padding: '0.75rem' }}>No incidents found</td></tr>
             ) : incidents.map((incident) => {
               const start = incident.started_at || incident.created_at;
               const end = incident.resolved_at;
               const durationMs = start && end ? (new Date(end).getTime() - new Date(start).getTime()) : null;
               const durationText = durationMs != null ? formatDuration(durationMs) : 'Ongoing';
+              const isExpanded = expandedIncidentId === incident.id;
+              const description = incident.description || 'No description';
+              const isTruncated = description.length > 60;
+              const displayText = isExpanded ? description : (isTruncated ? description.substring(0, 60) + '...' : description);
               return (
-                <tr key={incident.id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '0.75rem' }}>{start ? formatLocalTime(start) : '-'}</td>
-                  <td style={{ padding: '0.75rem' }}>{end ? formatLocalTime(end) : 'Open'}</td>
-                  <td style={{ padding: '0.75rem' }}>{durationText}</td>
-                </tr>
+                <>
+                  <tr key={incident.id} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '0.75rem' }}>{start ? formatLocalTime(start) : '-'}</td>
+                    <td style={{ padding: '0.75rem' }}>{end ? formatLocalTime(end) : 'Open'}</td>
+                    <td style={{ padding: '0.75rem' }}>{durationText}</td>
+                    <td style={{ padding: '0.75rem', cursor: 'pointer', color: '#0066cc' }} onClick={() => setExpandedIncidentId(isExpanded ? null : incident.id)}>
+                      {displayText}
+                      {isTruncated && (
+                        <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
+                          {isExpanded ? '▼' : '▶'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr style={{ backgroundColor: '#f9f9f9', borderBottom: '1px solid #eee' }}>
+                      <td colSpan="4" style={{ padding: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.9rem', color: '#333' }}>
+                        {description}
+                      </td>
+                    </tr>
+                  )}
+                </>
               );
             })}
           </tbody>
