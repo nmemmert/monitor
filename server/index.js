@@ -143,33 +143,42 @@ app.post('/api/resources', (req, res) => {
     return res.status(400).json({ error: 'Name and URL are required' });
   }
 
-  const stmt = db.prepare(`
-    INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
 
-  const result = stmt.run(
-    name,
-    url,
-    type || 'http',
-    check_interval || 60000,
-    timeout || 5000,
-    group_id || null,
-    http_keyword || null,
-    http_headers || null,
-    quiet_hours_start || null,
-    quiet_hours_end || null,
-    cert_expiry_days || 30,
-    sla_target || 99.9,
-    email_to || null,
-    maintenance_mode ? 1 : 0
-  );
+    const result = stmt.run(
+      name,
+      url,
+      type || 'http',
+      check_interval || 60000,
+      timeout || 5000,
+      group_id || null,
+      http_keyword || null,
+      http_headers || null,
+      quiet_hours_start || null,
+      quiet_hours_end || null,
+      cert_expiry_days || 30,
+      sla_target || 99.9,
+      email_to || null,
+      maintenance_mode ? 1 : 0
+    );
 
-  // Invalidate related cache entries
-  cache.invalidatePattern('history:');
-  cache.invalidatePattern('sla:');
+    // Invalidate related cache entries
+    cache.invalidatePattern('history:');
+    cache.invalidatePattern('sla:');
 
-  res.json({ id: result.lastInsertRowid, message: 'Resource created' });
+    res.json({ id: result.lastInsertRowid, message: 'Resource created' });
+  } catch (err) {
+    console.error('[API] Error creating resource:', err.message);
+    // Helpful hint if migration missing
+    const hint = err.message.includes('no column named maintenance_mode')
+      ? 'Database schema missing maintenance_mode. Restart server to run migrations.'
+      : undefined;
+    res.status(500).json({ error: 'Failed to create resource', details: err.message, hint });
+  }
 });
 
 // Update resource
