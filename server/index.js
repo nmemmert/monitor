@@ -112,7 +112,7 @@ app.delete('/api/groups/:id', (req, res) => {
 // Get all resources
 app.get('/api/resources', (req, res) => {
   const resources = db.prepare('SELECT * FROM resources ORDER BY group_id, name').all();
-  res.json(resources);
+  res.json({ resources });
 });
 
 // Get single resource with stats
