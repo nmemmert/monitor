@@ -24,6 +24,7 @@ function Dashboard() {
   const [showModal, setShowModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
@@ -49,6 +50,7 @@ function Dashboard() {
   const [tagFilter, setTagFilter] = useState('');
   const [groupData, setGroupData] = useState({ name: '', description: '' });
   const wsRef = useRef(null);
+  const actionsRef = useRef(null);
   const navigate = useNavigate();
 
   const loadResources = useCallback(async () => {
@@ -100,6 +102,18 @@ function Dashboard() {
       loadResources();
     }
   }, [loadResources]);
+
+  // Close Actions menu on outside click
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!actionsRef.current) return;
+      if (!actionsRef.current.contains(e.target)) {
+        setActionsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
 
   useEffect(() => {
     // Try to connect via WebSocket
@@ -354,7 +368,7 @@ function Dashboard() {
     <div className="container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <h2>SkyWatch Dashboard</h2>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             type="text"
             placeholder="Filter by tag"
@@ -362,22 +376,71 @@ function Dashboard() {
             onChange={(e) => setTagFilter(e.target.value)}
             style={{ padding: '0.5rem 0.75rem', borderRadius: '4px', border: '1px solid #ddd', minWidth: '160px' }}
           />
-          <button className="btn btn-secondary" onClick={() => setShowGroupModal(true)}>
-            + New Group
-          </button>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-            + Add Resource
-          </button>
-          <button className="btn btn-secondary" onClick={handleExportCSV}>
-            ⬇ Export CSV
-          </button>
-          <button className="btn btn-secondary" onClick={() => document.getElementById('csv-import').click()}>
-            ⬆ Import CSV
-          </button>
-          <input 
-            id="csv-import" 
-            type="file" 
-            accept=".csv" 
+          <div ref={actionsRef} style={{ position: 'relative' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setActionsOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={actionsOpen}
+            >
+              Actions ▾
+            </button>
+            {actionsOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: '110%',
+                  background: '#fff',
+                  border: '1px solid #ddd',
+                  borderRadius: '6px',
+                  boxShadow: '0 8px 20px rgba(0,0,0,0.12)',
+                  minWidth: '200px',
+                  padding: '0.25rem 0',
+                  zIndex: 20,
+                }}
+              >
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => { setActionsOpen(false); setShowGroupModal(true); }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.6rem 0.8rem' }}
+                  role="menuitem"
+                >
+                  + New Group
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => { setActionsOpen(false); setShowModal(true); }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.6rem 0.8rem' }}
+                  role="menuitem"
+                >
+                  + Add Resource
+                </button>
+                <hr style={{ margin: '0.25rem 0', border: 0, borderTop: '1px solid #eee' }} />
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => { setActionsOpen(false); handleExportCSV(); }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.6rem 0.8rem' }}
+                  role="menuitem"
+                >
+                  ⬇ Export CSV
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => { setActionsOpen(false); document.getElementById('csv-import').click(); }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.6rem 0.8rem' }}
+                  role="menuitem"
+                >
+                  ⬆ Import CSV
+                </button>
+              </div>
+            )}
+          </div>
+          <input
+            id="csv-import"
+            type="file"
+            accept=".csv"
             style={{ display: 'none' }}
             onChange={handleImportCSV}
           />
