@@ -709,8 +709,8 @@ function Dashboard() {
               <div className="form-group">
                 <label>Alert Email Address (Optional)</label>
                 <input
-                  type="email"
-                  placeholder="user@example.com (leave empty to use global setting)"
+                  type="text"
+                  placeholder="user@example.com or alice@example.com,bob@example.com (leave empty to use global setting)"
                   value={formData.email_to || ''}
                   onChange={(e) => setFormData({ ...formData, email_to: e.target.value })}
                 />
@@ -917,8 +917,8 @@ function Dashboard() {
               <div className="form-group">
                 <label>Alert Email Address (Optional)</label>
                 <input
-                  type="email"
-                  placeholder="user@example.com (leave empty to use global setting)"
+                  type="text"
+                  placeholder="user@example.com or alice@example.com,bob@example.com (leave empty to use global setting)"
                   value={editData.email_to || ''}
                   onChange={(e) => setEditData({ ...editData, email_to: e.target.value })}
                 />
