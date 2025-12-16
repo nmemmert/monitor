@@ -124,7 +124,7 @@ class NotificationService {
     return currentTime >= startTime && currentTime < endTime;
   }
 
-  async sendEmail(resource, message, type, stats = null) {
+  async sendEmail(resource, message, type, stats = null, emailOverride = null) {
     if (!this.transporter) {
       console.error(`[Email] Config incomplete; skipping email (enabled=${this.emailEnabled}, host=${this.config.email_host})`);
       return;
