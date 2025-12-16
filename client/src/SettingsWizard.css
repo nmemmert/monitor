@@ -187,3 +187,49 @@
   padding: 1rem 3rem;
   font-size: 1.1rem;
 }
+
+.save-status {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 1rem 1.5rem;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  animation: slideIn 0.3s ease-out;
+  max-width: 300px;
+}
+
+.save-status.success {
+  background: #4caf50;
+  color: white;
+  border-left: 4px solid #388e3c;
+}
+
+.save-status.error {
+  background: #f44336;
+  color: white;
+  border-left: 4px solid #d32f2f;
+}
+
+.save-status strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+}
+
+.save-status p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

@@ -35,8 +35,9 @@ function SettingsWizard() {
   });
 
   const [testResult, setTestResult] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [savingSection, setSavingSection] = useState(null); // Track which section is saving
   const [testing, setTesting] = useState(false);
+  const [savedMessage, setSavedMessage] = useState(null);
 
   useEffect(() => {
     loadSettings();
@@ -51,16 +52,21 @@ function SettingsWizard() {
     }
   };
 
-  const handleSave = async () => {
-    setSaving(true);
+  // Save specific section without requiring all settings
+  const handleSaveSection = async (sectionName, sectionData) => {
+    setSavingSection(sectionName);
+    setSavedMessage(null);
     try {
-      await axios.post('/api/settings', settings);
-      alert('Settings saved successfully! Changes apply immediately.');
+      await axios.post('/api/settings', sectionData);
+      setSavedMessage({ section: sectionName, success: true });
+      // Clear message after 3 seconds
+      setTimeout(() => setSavedMessage(null), 3000);
     } catch (error) {
       console.error('Error saving settings:', error);
-      alert('Error saving settings');
+      setSavedMessage({ section: sectionName, success: false, error: error.response?.data?.error || 'Failed to save' });
+      setTimeout(() => setSavedMessage(null), 5000);
     } finally {
-      setSaving(false);
+      setSavingSection(null);
     }
   };
 
@@ -230,13 +236,30 @@ function SettingsWizard() {
               </ol>
             </div>
 
-            <button
-              className="btn btn-secondary"
-              onClick={handleTestEmail}
-              disabled={testing || !settings.email_user || !settings.email_pass}
-            >
-              {testing ? 'Sending...' : '📨 Send Test Email'}
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={handleTestEmail}
+                disabled={testing || !settings.email_user || !settings.email_pass}
+              >
+                {testing ? 'Sending...' : '📨 Send Test Email'}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => handleSaveSection('Email', {
+                  email_enabled: settings.email_enabled,
+                  email_host: settings.email_host,
+                  email_port: settings.email_port,
+                  email_user: settings.email_user,
+                  email_pass: settings.email_pass,
+                  email_from: settings.email_from,
+                  email_to: settings.email_to,
+                })}
+                disabled={savingSection === 'Email'}
+              >
+                {savingSection === 'Email' ? 'Saving...' : '💾 Save Email Settings'}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -279,13 +302,25 @@ function SettingsWizard() {
               }, null, 2)}</pre>
             </div>
 
-            <button
-              className="btn btn-secondary"
-              onClick={handleTestWebhook}
-              disabled={testing || !settings.webhook_url}
-            >
-              {testing ? 'Sending...' : '🔔 Send Test Webhook'}
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={handleTestWebhook}
+                disabled={testing || !settings.webhook_url}
+              >
+                {testing ? 'Sending...' : '🔔 Send Test Webhook'}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => handleSaveSection('Webhook', {
+                  webhook_enabled: settings.webhook_enabled,
+                  webhook_url: settings.webhook_url,
+                })}
+                disabled={savingSection === 'Webhook'}
+              >
+                {savingSection === 'Webhook' ? 'Saving...' : '💾 Save Webhook Settings'}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -368,19 +403,44 @@ function SettingsWizard() {
               <small>Number of consecutive failed checks before automatically creating an incident (default: 10)</small>
             </div>
           </div>
+
+          <button
+            className="btn btn-primary"
+            onClick={() => handleSaveSection('Monitoring', {
+              check_interval: settings.check_interval,
+              timeout: settings.timeout,
+              timezone: settings.timezone,
+              retention_days: settings.retention_days,
+              auto_cleanup_enabled: settings.auto_cleanup_enabled,
+              consecutive_failures: settings.consecutive_failures,
+              grace_period: settings.grace_period,
+              downtime_threshold: settings.downtime_threshold,
+              alert_retry_count: settings.alert_retry_count,
+              alert_retry_delay: settings.alert_retry_delay,
+              fallback_webhook: settings.fallback_webhook,
+              global_quiet_hours_start: settings.global_quiet_hours_start,
+              global_quiet_hours_end: settings.global_quiet_hours_end,
+              escalation_hours: settings.escalation_hours,
+              default_sort: settings.default_sort,
+              items_per_page: settings.items_per_page,
+              refresh_interval: settings.refresh_interval,
+              theme: settings.theme,
+              incident_failure_threshold: settings.incident_failure_threshold,
+            })}
+            disabled={savingSection === 'Monitoring'}
+          >
+            {savingSection === 'Monitoring' ? 'Saving...' : '💾 Save Monitoring Settings'}
+          </button>
         </div>
       </div>
 
-      {/* Save Button */}
-      <div className="settings-actions">
-        <button
-          className="btn btn-primary btn-large"
-          onClick={handleSave}
-          disabled={saving}
-        >
-          {saving ? 'Saving...' : '💾 Save Settings'}
-        </button>
-      </div>
+      {/* Status Messages */}
+      {savedMessage && (
+        <div className={`save-status ${savedMessage.success ? 'success' : 'error'}`}>
+          <strong>{savedMessage.success ? '✅ Success!' : '❌ Error:'}</strong>
+          <p>{savedMessage.success ? `${savedMessage.section} settings saved!` : savedMessage.error}</p>
+        </div>
+      )}
     </div>
   );
 }
