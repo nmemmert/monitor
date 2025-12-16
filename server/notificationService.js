@@ -1,5 +1,7 @@
 const nodemailer = require('nodemailer');
 const axios = require('axios');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 class NotificationService {
@@ -128,8 +130,16 @@ class NotificationService {
     }
 
     try {
+      const logoPath = path.join(__dirname, '..', 'client', 'public', 'app-icon.png');
+      const hasLogo = fs.existsSync(logoPath);
+      const logoCid = 'skywatch-app-icon';
+      const logoBlock = hasLogo
+        ? `<div style="margin-bottom: 12px;"><img src="cid:${logoCid}" alt="SkyWatch" style="height: 40px; width: 40px; border-radius: 8px;" /></div>`
+        : '';
+
       let htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          ${logoBlock}
           <h2 style="color: ${type === 'started' ? '#d32f2f' : '#388e3c'};">${type === 'started' ? '🔴 Alert' : '🟢 Recovered'}</h2>
           <p><strong>Resource:</strong> ${resource.name}</p>
           <p><strong>Status:</strong> ${type === 'started' ? 'DOWN' : 'UP'}</p>
@@ -172,6 +182,9 @@ class NotificationService {
         subject: `Alert: ${resource.name} is ${type === 'started' ? 'DOWN' : 'UP'}`,
         text: message,
         html: htmlContent,
+        attachments: hasLogo
+          ? [{ filename: 'app-icon.png', path: logoPath, cid: logoCid }]
+          : [],
       });
     } catch (error) {
       console.error('Email error:', error.message);
