@@ -901,6 +901,33 @@ app.post('/api/incidents/:id/acknowledge', (req, res) => {
   res.json({ message: 'Incident acknowledged' });
 });
 
+// Update incident description
+app.patch('/api/incidents/:id', (req, res) => {
+  const { id } = req.params;
+  const { description } = req.body;
+
+  if (!description || typeof description !== 'string') {
+    return res.status(400).json({ error: 'Description is required and must be a string' });
+  }
+
+  const stmt = db.prepare(`
+    UPDATE incidents 
+    SET description = ?
+    WHERE id = ?
+  `);
+
+  const result = stmt.run(description.trim(), id);
+  
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Incident not found' });
+  }
+
+  // Invalidate cache
+  cache.flushAll();
+
+  res.json({ message: 'Incident updated' });
+});
+
 // Get SLA report
 app.get('/api/sla', (req, res) => {
   const { days = 30, page = 1, limit = 10 } = req.query;

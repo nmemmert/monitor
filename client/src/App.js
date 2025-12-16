@@ -993,6 +993,10 @@ function ResourceDetail() {
   const incidentsLimit = 10;
   const [incidentsSort, setIncidentsSort] = useState('desc');
   const [expandedIncidentId, setExpandedIncidentId] = useState(null);
+  const [showIncidentModal, setShowIncidentModal] = useState(false);
+  const [editingIncident, setEditingIncident] = useState(null);
+  const [incidentDescription, setIncidentDescription] = useState('');
+  const [updatingIncident, setUpdatingIncident] = useState(false);
 
   const [sla, setSla] = useState(null);
   const [slaLoading, setSlaLoading] = useState(false);
@@ -1073,6 +1077,32 @@ function ResourceDetail() {
       console.error('Error loading incidents:', error);
     } finally {
       setIncidentsLoading(false);
+    }
+  };
+
+  const handleEditIncident = (incident) => {
+    setEditingIncident(incident);
+    setIncidentDescription(incident.description || '');
+    setShowIncidentModal(true);
+  };
+
+  const handleUpdateIncident = async () => {
+    if (!editingIncident) return;
+    
+    try {
+      setUpdatingIncident(true);
+      await axios.patch(`/api/incidents/${editingIncident.id}`, {
+        description: incidentDescription,
+      });
+      setShowIncidentModal(false);
+      setEditingIncident(null);
+      setIncidentDescription('');
+      loadIncidents(); // Reload to show updated description
+    } catch (error) {
+      console.error('Error updating incident:', error);
+      alert('Failed to update incident: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setUpdatingIncident(false);
     }
   };
 
@@ -1385,13 +1415,22 @@ function ResourceDetail() {
                     <td style={{ padding: '0.75rem' }}>{start ? formatLocalTime(start) : '-'}</td>
                     <td style={{ padding: '0.75rem' }}>{end ? formatLocalTime(end) : 'Open'}</td>
                     <td style={{ padding: '0.75rem' }}>{durationText}</td>
-                    <td style={{ padding: '0.75rem', cursor: 'pointer', color: '#0066cc' }} onClick={() => setExpandedIncidentId(isExpanded ? null : incident.id)}>
-                      {displayText}
-                      {isTruncated && (
-                        <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
-                          {isExpanded ? '▼' : '▶'}
-                        </span>
-                      )}
+                    <td style={{ padding: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ cursor: 'pointer', color: '#0066cc', flex: 1 }} onClick={() => setExpandedIncidentId(isExpanded ? null : incident.id)}>
+                        {displayText}
+                        {isTruncated && (
+                          <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
+                            {isExpanded ? '▼' : '▶'}
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ marginLeft: '0.5rem', padding: '0.3rem 0.6rem', fontSize: '0.85rem' }}
+                        onClick={() => handleEditIncident(incident)}
+                      >
+                        Edit
+                      </button>
                     </td>
                   </tr>
                   {isExpanded && (
@@ -1490,6 +1529,51 @@ function ResourceDetail() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showIncidentModal && editingIncident && (
+        <div className="modal-overlay" onClick={() => setShowIncidentModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2>Edit Incident</h2>
+            <div className="form-group">
+              <label style={{ fontSize: '0.9rem', color: '#666' }}>Incident Started</label>
+              <div style={{ padding: '0.5rem', backgroundColor: '#f5f5f5', borderRadius: '4px', marginBottom: '1rem' }}>
+                {formatLocalTime(editingIncident.started_at || editingIncident.created_at)}
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Description *</label>
+              <textarea
+                rows="6"
+                placeholder="Describe what happened and why..."
+                value={incidentDescription}
+                onChange={(e) => setIncidentDescription(e.target.value)}
+                style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}
+              />
+            </div>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setShowIncidentModal(false);
+                  setEditingIncident(null);
+                  setIncidentDescription('');
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                onClick={handleUpdateIncident}
+                disabled={updatingIncident || !incidentDescription.trim()}
+              >
+                {updatingIncident ? 'Updating...' : 'Update'}
+              </button>
+            </div>
           </div>
         </div>
       )}
