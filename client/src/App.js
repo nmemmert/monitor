@@ -176,6 +176,16 @@ function Dashboard() {
 
   const handleEditResource = async (id) => {
     try {
+      const resource = resources.find(r => r.id === id);
+      
+      // Handle group change via PATCH if group_id changed
+      if (editData.group_id !== resource?.group_id) {
+        await axios.patch(`/api/resources/${id}/group`, { 
+          group_id: editData.group_id || null 
+        });
+      }
+      
+      // Update other fields via PUT
       await axios.put(`/api/resources/${id}`, editData);
       setShowEditModal(false);
       setEditData({});
@@ -892,6 +902,19 @@ function Dashboard() {
               </div>
 
               <div className="form-group">
+                <label>Group</label>
+                <select
+                  value={editData.group_id || ''}
+                  onChange={(e) => setEditData({ ...editData, group_id: e.target.value ? parseInt(e.target.value) : null })}
+                >
+                  <option value="">Ungrouped</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
                 <label>Alert Email Address (Optional)</label>
                 <input
                   type="email"
@@ -899,6 +922,7 @@ function Dashboard() {
                   value={editData.email_to || ''}
                   onChange={(e) => setEditData({ ...editData, email_to: e.target.value })}
                 />
+                <small style={{ color: '#666', fontSize: '0.85rem' }}>Comma-separated emails: alice@example.com,bob@example.com</small>
               </div>
 
               <div className="form-group">

@@ -1,4 +1,6 @@
 const axios = require('axios');
+const http = require('http');
+const https = require('https');
 const net = require('net');
 const tls = require('tls');
 const dns = require('dns').promises;
@@ -26,6 +28,11 @@ function parseHostPort(urlString, fallbackPort) {
 }
 
 class MonitorService {
+  constructor() {
+    // Keep-alive agents for pooled HTTP/S connections
+    this.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 });
+    this.httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 });
+  }
   async checkResource(resource) {
     const startTime = Date.now();
     const base = {
@@ -81,11 +88,14 @@ class MonitorService {
         }
       }
 
+      const isHttps = resource.url.startsWith('https');
       const response = await axios.get(resource.url, {
         timeout: resource.timeout,
         validateStatus: () => true,
         maxRedirects: 5,
         headers,
+        httpAgent: this.httpAgent,
+        httpsAgent: this.httpsAgent,
       });
       const responseTime = Date.now() - startTime;
       const isUp = response.status >= 200 && response.status < 400;

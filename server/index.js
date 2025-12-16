@@ -219,6 +219,42 @@ app.put('/api/resources/:id', (req, res) => {
   res.json({ message: 'Resource updated' });
 });
 
+// Move a resource to a different group
+app.patch('/api/resources/:id/group', (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { group_id } = req.body;
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: 'Invalid resource id' });
+    }
+    if (group_id === undefined || group_id === null || group_id === '') {
+      return res.status(400).json({ error: 'group_id is required' });
+    }
+    const gid = parseInt(group_id, 10);
+    if (!Number.isInteger(gid)) {
+      return res.status(400).json({ error: 'Invalid group_id' });
+    }
+
+    const stmt = db.prepare('UPDATE resources SET group_id = ? WHERE id = ?');
+    const info = stmt.run(gid, id);
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    // Invalidate caches and broadcast update
+    cache.invalidatePattern('history:');
+    cache.invalidatePattern('sla:');
+    if (global.broadcastDashboardUpdate) {
+      try { global.broadcastDashboardUpdate(); } catch {}
+    }
+
+    const updated = db.prepare('SELECT * FROM resources WHERE id = ?').get(id);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update group', details: String(err) });
+  }
+});
+
 // Delete resource
 app.delete('/api/resources/:id', (req, res) => {
   db.prepare('DELETE FROM resources WHERE id = ?').run(req.params.id);

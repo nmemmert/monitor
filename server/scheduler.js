@@ -92,6 +92,29 @@ class Scheduler {
         const result = await monitorService.checkResource(resource);
         monitorService.saveCheck(result);
 
+        // Rolling cap per resource (configurable via settings; default 10000)
+        try {
+          const capSetting = db.prepare(`SELECT value FROM settings WHERE key = 'checks_cap_per_resource'`).get();
+          const cap = capSetting ? parseInt(capSetting.value) : 10000;
+          if (Number.isFinite(cap) && cap > 0) {
+            // Delete oldest rows beyond cap, using id ordering per resource
+            db.prepare(`
+              DELETE FROM checks
+              WHERE id IN (
+                SELECT id FROM checks
+                WHERE resource_id = ?
+                ORDER BY id ASC
+                LIMIT (
+                  SELECT MAX(COUNT(*) - ?, 0)
+                  FROM checks WHERE resource_id = ?
+                )
+              )
+            `).run(resource.id, cap, resource.id);
+          }
+        } catch (e) {
+          // Non-fatal
+        }
+
         const incident = monitorService.handleIncident(
           resource.id,
           result.status === 'down'

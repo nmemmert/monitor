@@ -76,8 +76,17 @@ class NotificationService {
     const promises = [];
 
     // Use resource-specific email if provided, otherwise fall back to global config
-    if (this.emailEnabled && (resource.email_to || this.config.email_to)) {
-      promises.push(this.sendEmail(resource, message, incident.type, stats));
+      if (this.emailEnabled && (resource.email_to || this.config.email_to)) {
+        const targetsCsv = resource.email_to || this.config.email_to;
+        const targets = String(targetsCsv)
+          .split(',')
+          .map(t => t.trim())
+          .filter(t => t && /.+@.+\..+/.test(t));
+        if (targets.length > 0) {
+          for (const email of targets) {
+            promises.push(this.sendEmail(resource, message, incident.type, stats, email));
+          }
+        }
     } else {
       if (!this.emailEnabled) {
         // Email globally disabled
@@ -158,7 +167,7 @@ class NotificationService {
       htmlContent += `</div>`;
 
       // Use resource-specific email if provided, otherwise use global config
-      const emailTo = resource.email_to || this.config.email_to;
+      const emailTo = emailOverride || resource.email_to || this.config.email_to;
       
       await this.transporter.sendMail({
         from: this.config.email_from,
