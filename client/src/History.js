@@ -20,6 +20,7 @@ function History() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showAveraged, setShowAveraged] = useState(true);
+  const [showTrends, setShowTrends] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalItems, setTotalItems] = useState(0);
@@ -33,7 +34,6 @@ function History() {
         const response = await axios.get('/api/history/overview', { 
           params: { days, page: currentPage, limit: pageSize, averaged: showAveraged }
         });
-        console.log('History API Response:', response.data);
         
         let data = [];
         let total = 0;
@@ -47,7 +47,22 @@ function History() {
           total = data.length;
         }
         
-        console.log('Processed history data:', { data, total });
+        // Fetch trends data if enabled
+        if (showTrends && data.length > 0) {
+          const trendsPromises = data.map(async (resource) => {
+            try {
+              const trendsResponse = await axios.get(`/api/resources/${resource.id}/trends`, {
+                params: { days }
+              });
+              return { ...resource, trendsData: trendsResponse.data };
+            } catch (err) {
+              console.error(`Error loading trends for resource ${resource.id}:`, err);
+              return resource;
+            }
+          });
+          data = await Promise.all(trendsPromises);
+        }
+        
         setHistoryData(data);
         setTotalItems(total);
         setLoading(false);
@@ -59,7 +74,7 @@ function History() {
     };
 
     loadHistory();
-  }, [days, currentPage, pageSize, showAveraged]);
+  }, [days, currentPage, pageSize, showAveraged, showTrends]);
 
   if (loading) return <div className="container">Loading history...</div>;
   if (error) return <div className="container">Error loading history: {error}</div>;
@@ -89,6 +104,15 @@ function History() {
             />
             <span>Show Averages</span>
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', userSelect: 'none', background: '#f5f5f5', padding: '0.5rem 1rem', borderRadius: '4px', border: '1px solid #ddd' }}>
+            <input
+              type="checkbox"
+              checked={showTrends}
+              onChange={(e) => setShowTrends(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            <span>Show Week-over-Week Trends</span>
+          </label>
         </div>
       </div>
 
@@ -102,7 +126,6 @@ function History() {
           {historyData.map((resource) => {
             // Server already handles averaging when averaged=true is passed
             const chartData = prepareChartData(resource.checks || []);
-            console.log(`${resource.name} - Total data points:`, chartData.length, 'Averaged mode:', showAveraged);
 
             return (
               <div key={resource.id} className="detail-section" style={{ marginBottom: '3rem', background: '#fff', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
@@ -188,6 +211,74 @@ function History() {
                   <div style={{ color: '#999', padding: '2rem', textAlign: 'center', background: '#fafafa', borderRadius: '6px' }}>No check data available</div>
                 )}
 
+                {showTrends && resource.trendsData && (
+                  <div className="chart-container" style={{ height: '400px', marginBottom: '1.5rem', background: '#fafafa', padding: '1rem', borderRadius: '6px' }}>
+                    <h4 style={{ marginBottom: '1rem', color: '#667eea' }}>Week-over-Week Comparison</h4>
+                    <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
+                      <div>
+                        <strong>Response Time Change:</strong>{' '}
+                        <span style={{ color: resource.trendsData.comparison.response_time_change >= 0 ? '#f44336' : '#4caf50' }}>
+                          {resource.trendsData.comparison.response_time_change >= 0 ? '+' : ''}
+                          {resource.trendsData.comparison.response_time_change.toFixed(1)}ms
+                        </span>
+                      </div>
+                      <div>
+                        <strong>Uptime Change:</strong>{' '}
+                        <span style={{ color: resource.trendsData.comparison.uptime_change >= 0 ? '#4caf50' : '#f44336' }}>
+                          {resource.trendsData.comparison.uptime_change >= 0 ? '+' : ''}
+                          {resource.trendsData.comparison.uptime_change.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                    <ResponsiveContainer width="100%" height="90%">
+                      <ComposedChart data={prepareTrendsChartData(resource.trendsData)} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                        <XAxis
+                          dataKey="day"
+                          tick={{ fontSize: 12, fill: '#666' }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={80}
+                        />
+                        <YAxis 
+                          label={{ value: 'Response Time (ms)', angle: -90, position: 'insideLeft', style: { fill: '#666' } }}
+                          tick={{ fontSize: 12, fill: '#666' }}
+                        />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}
+                          formatter={(value, name) => {
+                            if (name === 'Current Period') return `${value}ms`;
+                            if (name === 'Previous Period') return `${value}ms`;
+                            return value;
+                          }}
+                        />
+                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                        <Area
+                          type="monotone"
+                          dataKey="currentResponseTime"
+                          fill="#667eea"
+                          stroke="#667eea"
+                          name="Current Period"
+                          fillOpacity={0.3}
+                          strokeWidth={2}
+                          isAnimationActive={false}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="previousResponseTime"
+                          fill="#95a5a6"
+                          stroke="#95a5a6"
+                          strokeDasharray="5 5"
+                          name="Previous Period"
+                          fillOpacity={0.1}
+                          strokeWidth={2}
+                          isAnimationActive={false}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+
                 <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                   <div className="stat" style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '6px' }}>
                     <p className="stat-value" style={{ color: '#667eea', fontSize: '2rem', fontWeight: 'bold' }}>{resource.checks?.length || 0}</p>
@@ -267,6 +358,29 @@ function prepareChartData(checks) {
       statusNumeric: check.status === 'up' ? 1 : 0,
     };
   });
+}
+
+function prepareTrendsChartData(trendsData) {
+  if (!trendsData || !trendsData.current || !trendsData.previous) return [];
+  
+  const maxLength = Math.max(
+    trendsData.current.data.length,
+    trendsData.previous.data.length
+  );
+  
+  const result = [];
+  for (let i = 0; i < maxLength; i++) {
+    const currentDay = trendsData.current.data[i];
+    const previousDay = trendsData.previous.data[i];
+    
+    result.push({
+      day: `Day ${i + 1}`,
+      currentResponseTime: currentDay ? currentDay.avg_response_time : null,
+      previousResponseTime: previousDay ? previousDay.avg_response_time : null,
+    });
+  }
+  
+  return result;
 }
 
 export default History;

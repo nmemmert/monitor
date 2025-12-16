@@ -56,12 +56,73 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS maintenance_windows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resource_id INTEGER NOT NULL,
+    start_time DATETIME NOT NULL,
+    end_time DATETIME NOT NULL,
+    reason TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS alert_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resource_id INTEGER NOT NULL,
+    consecutive_failures_threshold INTEGER DEFAULT 1,
+    response_time_threshold INTEGER,
+    response_time_baseline INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS transaction_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resource_id INTEGER NOT NULL,
+    step_order INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    method TEXT DEFAULT 'GET',
+    headers TEXT,
+    body TEXT,
+    expected_status INTEGER DEFAULT 200,
+    keyword TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS archived_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resource_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    response_time INTEGER,
+    status_code INTEGER,
+    error_message TEXT,
+    details TEXT,
+    checked_at DATETIME NOT NULL,
+    archived_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS resource_tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resource_id INTEGER NOT NULL,
+    tag TEXT NOT NULL,
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE,
+    UNIQUE(resource_id, tag)
+  );
+
   CREATE INDEX IF NOT EXISTS idx_checks_resource_id ON checks(resource_id);
   CREATE INDEX IF NOT EXISTS idx_checks_checked_at ON checks(checked_at);
   CREATE INDEX IF NOT EXISTS idx_checks_resource_checked ON checks(resource_id, checked_at DESC);
   CREATE INDEX IF NOT EXISTS idx_incidents_resource_id ON incidents(resource_id);
   CREATE INDEX IF NOT EXISTS idx_incidents_resolved ON incidents(resource_id, resolved_at);
   CREATE INDEX IF NOT EXISTS idx_resources_group_id ON resources(group_id);
+  CREATE INDEX IF NOT EXISTS idx_maintenance_windows_resource ON maintenance_windows(resource_id);
+  CREATE INDEX IF NOT EXISTS idx_alert_rules_resource ON alert_rules(resource_id);
+  CREATE INDEX IF NOT EXISTS idx_transaction_checks_resource ON transaction_checks(resource_id);
+  CREATE INDEX IF NOT EXISTS idx_archived_checks_resource_time ON archived_checks(resource_id, checked_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_resource_tags_resource ON resource_tags(resource_id);
+  CREATE INDEX IF NOT EXISTS idx_resource_tags_tag ON resource_tags(tag);
 `);
 
 // Lightweight migrations - for existing databases
@@ -135,6 +196,57 @@ try {
 
 try {
   db.prepare("ALTER TABLE checks ADD COLUMN cert_expiry_date TEXT").run();
+} catch (err) {}
+
+// New columns for features
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN tags TEXT").run();
+  console.log('[DB] Added tags column to resources');
+} catch (err) {
+  if (err.message.includes('duplicate')) {
+    console.log('[DB] tags column already exists');
+  }
+}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN consecutive_failures_threshold INTEGER DEFAULT 1").run();
+  console.log('[DB] Added consecutive_failures_threshold column to resources');
+} catch (err) {
+  if (err.message.includes('duplicate')) {
+    console.log('[DB] consecutive_failures_threshold column already exists');
+  }
+}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN response_time_threshold INTEGER").run();
+  console.log('[DB] Added response_time_threshold column to resources');
+} catch (err) {
+  if (err.message.includes('duplicate')) {
+    console.log('[DB] response_time_threshold column already exists');
+  }
+}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN response_time_baseline INTEGER").run();
+  console.log('[DB] Added response_time_baseline column to resources');
+} catch (err) {
+  if (err.message.includes('duplicate')) {
+    console.log('[DB] response_time_baseline column already exists');
+  }
+}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN is_transaction INTEGER DEFAULT 0").run();
+  console.log('[DB] Added is_transaction column to resources');
+} catch (err) {
+  if (err.message.includes('duplicate')) {
+    console.log('[DB] is_transaction column already exists');
+  }
+}
+
+// Settings for data retention
+try {
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('retention_days', '30')").run();
 } catch (err) {}
 
 // Helpful indexes for time-range queries

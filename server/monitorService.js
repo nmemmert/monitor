@@ -27,7 +27,6 @@ function parseHostPort(urlString, fallbackPort) {
 
 class MonitorService {
   async checkResource(resource) {
-    const type = (resource.type || 'http').toLowerCase();
     const startTime = Date.now();
     const base = {
       resource_id: resource.id,
@@ -37,6 +36,13 @@ class MonitorService {
       error_message: null,
       details: null,
     };
+
+    // Check if this is a transaction
+    if (resource.is_transaction) {
+      return this.checkTransaction(resource, startTime, base);
+    }
+
+    const type = (resource.type || 'http').toLowerCase();
 
     switch (type) {
       case 'http':
@@ -296,17 +302,38 @@ class MonitorService {
   }
 
   handleIncident(resourceId, isDown) {
+    const resource = db.prepare('SELECT * FROM resources WHERE id = ?').get(resourceId);
+    const threshold = resource?.consecutive_failures_threshold || 1;
+    
     const activeIncident = db.prepare(`
       SELECT * FROM incidents 
       WHERE resource_id = ? AND resolved_at IS NULL
     `).get(resourceId);
 
-    if (isDown && !activeIncident) {
-      // Start new incident
-      db.prepare(`
-        INSERT INTO incidents (resource_id) VALUES (?)
-      `).run(resourceId);
-      return { type: 'started', incident: true };
+    if (isDown) {
+      // Check consecutive failures
+      const recentChecks = db.prepare(`
+        SELECT status FROM checks
+        WHERE resource_id = ?
+        ORDER BY checked_at DESC
+        LIMIT ?
+      `).all(resourceId, threshold);
+
+      const consecutiveFailures = recentChecks.every(c => c.status === 'down') ? recentChecks.length : 
+        recentChecks.findIndex(c => c.status === 'up') + 1;
+
+      // Only trigger incident if we've hit the threshold
+      if (consecutiveFailures >= threshold && !activeIncident) {
+        const stmt = db.prepare(`
+          INSERT INTO incidents (resource_id) VALUES (?)
+        `);
+        const result = stmt.run(resourceId);
+        return { 
+          type: 'started', 
+          incident: true,
+          consecutiveFailures
+        };
+      }
     } else if (!isDown && activeIncident) {
       // Resolve incident
       db.prepare(`
@@ -523,6 +550,142 @@ class MonitorService {
       p95LatencyMs,
       totalChecks: checks.length,
     };
+  }
+
+  // Check multi-step transaction
+  async checkTransaction(resource, startTime, base) {
+    try {
+      const steps = db.prepare(`
+        SELECT * FROM transaction_checks
+        WHERE resource_id = ?
+        ORDER BY step_order ASC
+      `).all(resource.id);
+
+      if (steps.length === 0) {
+        return {
+          ...base,
+          status: 'down',
+          error_message: 'No transaction steps defined'
+        };
+      }
+
+      let totalTime = 0;
+      const results = [];
+
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        const stepStart = Date.now();
+
+        try {
+          const headers = {};
+          if (step.headers) {
+            try {
+              Object.assign(headers, JSON.parse(step.headers));
+            } catch (e) {
+              // Invalid JSON, skip
+            }
+          }
+
+          const body = step.body ? JSON.parse(step.body) : undefined;
+          const response = await axios({
+            method: step.method || 'GET',
+            url: step.url,
+            headers,
+            data: body,
+            timeout: resource.timeout,
+            validateStatus: () => true,
+            maxRedirects: 5,
+          });
+
+          const stepTime = Date.now() - stepStart;
+          const statusOk = response.status === (step.expected_status || 200);
+          
+          let keywordMatch = true;
+          if (step.keyword && response.data) {
+            const dataStr = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+            keywordMatch = dataStr.includes(step.keyword);
+          }
+
+          if (!statusOk || !keywordMatch) {
+            return {
+              ...base,
+              status: 'down',
+              response_time: Date.now() - startTime,
+              status_code: response.status,
+              error_message: `Transaction failed at step ${i + 1}: Expected ${step.expected_status || 200}, got ${response.status}${!keywordMatch ? ' (keyword not found)' : ''}`
+            };
+          }
+
+          results.push({
+            step: i + 1,
+            status: response.status,
+            time: stepTime
+          });
+
+          totalTime += stepTime;
+        } catch (error) {
+          return {
+            ...base,
+            status: 'down',
+            response_time: Date.now() - startTime,
+            error_message: `Transaction failed at step ${i + 1}: ${error.message}`
+          };
+        }
+      }
+
+      // All steps passed
+      const responseTime = Date.now() - startTime;
+      return {
+        ...base,
+        status: 'up',
+        response_time: responseTime,
+        status_code: 200,
+        details: JSON.stringify({ steps: steps.length, results })
+      };
+    } catch (error) {
+      return {
+        ...base,
+        status: 'down',
+        response_time: Date.now() - startTime,
+        error_message: error.message
+      };
+    }
+  }
+
+  // Calculate baseline response time for anomaly detection
+  calculateResponseTimeBaseline(resourceId, days = 7) {
+    const checks = db.prepare(`
+      SELECT response_time FROM checks
+      WHERE resource_id = ? AND status = 'up' AND response_time IS NOT NULL
+      AND checked_at > datetime('now', ?)
+      ORDER BY response_time
+    `).all(resourceId, `-${days} days`);
+
+    if (checks.length === 0) {
+      return null;
+    }
+
+    // Return average of response times
+    const sum = checks.reduce((acc, c) => acc + (c.response_time || 0), 0);
+    return Math.round(sum / checks.length);
+  }
+
+  // Check if response time is anomalous
+  isResponseTimeAnomaly(resourceId, currentResponseTime, deviationPercent = 50) {
+    try {
+      const resource = db.prepare('SELECT * FROM resources WHERE id = ?').get(resourceId);
+      if (!resource || !resource.response_time_baseline) {
+        return false;
+      }
+
+      const baseline = resource.response_time_baseline;
+      const threshold = (baseline * (100 + deviationPercent)) / 100;
+
+      return currentResponseTime > threshold;
+    } catch (error) {
+      console.error('Error checking response time anomaly:', error.message);
+      return false;
+    }
   }
 }
 

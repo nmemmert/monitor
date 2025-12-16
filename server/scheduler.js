@@ -14,15 +14,66 @@ class Scheduler {
       await this.runChecks();
     });
 
-    // Clean old checks every hour (keep last 7 days)
-    cron.schedule('0 * * * *', () => {
-      db.prepare(`
-        DELETE FROM checks 
-        WHERE checked_at < datetime('now', '-7 days')
-      `).run();
+    // Archive old checks daily at 2 AM
+    cron.schedule('0 2 * * *', () => {
+      this.archiveOldChecks();
     });
 
+    // Also run archive on startup (with delay to let DB init)
+    setTimeout(() => {
+      this.archiveOldChecks();
+    }, 5000);
+
     console.log('Scheduler started');
+  }
+
+  archiveOldChecks() {
+    try {
+      const retentionSetting = db.prepare(`
+        SELECT value FROM settings WHERE key = 'retention_days'
+      `).get();
+      
+      const retentionDays = retentionSetting ? parseInt(retentionSetting.value) : 30;
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+      const cutoffString = cutoffDate.toISOString().replace('T', ' ').split('.')[0];
+
+      // Move old checks to archived_checks
+      const oldChecks = db.prepare(`
+        SELECT * FROM checks WHERE checked_at < ?
+      `).all(cutoffString);
+
+      if (oldChecks.length > 0) {
+        const insertArchived = db.prepare(`
+          INSERT INTO archived_checks (resource_id, status, response_time, status_code, error_message, details, checked_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const deleteOld = db.prepare(`
+          DELETE FROM checks WHERE id = ?
+        `);
+
+        const transaction = db.transaction(() => {
+          oldChecks.forEach(check => {
+            insertArchived.run(
+              check.resource_id,
+              check.status,
+              check.response_time,
+              check.status_code,
+              check.error_message,
+              check.details,
+              check.checked_at
+            );
+            deleteOld.run(check.id);
+          });
+        });
+
+        transaction();
+        console.log(`[Archival] Archived ${oldChecks.length} checks older than ${retentionDays} days`);
+      }
+    } catch (error) {
+      console.error('[Archival] Error archiving checks:', error.message);
+    }
   }
 
   async runChecks() {
@@ -60,6 +111,11 @@ class Scheduler {
       } catch (error) {
         console.error(`Error checking ${resource.name}:`, error.message);
       }
+    }
+
+    // Broadcast updated dashboard to all connected WebSocket clients
+    if (global.broadcastDashboardUpdate) {
+      global.broadcastDashboardUpdate();
     }
   }
 }

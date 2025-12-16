@@ -55,6 +55,12 @@ class NotificationService {
       return;
     }
 
+    // Check maintenance windows
+    if (this.isInMaintenanceWindow(resource.id)) {
+      console.log(`Resource ${resource.name} is in maintenance window, skipping alert`);
+      return;
+    }
+
     // Check quiet hours
     if (this.isQuietHours(resource)) {
       console.log(`Resource ${resource.name} is in quiet hours, skipping alert`);
@@ -71,14 +77,12 @@ class NotificationService {
 
     // Use resource-specific email if provided, otherwise fall back to global config
     if (this.emailEnabled && (resource.email_to || this.config.email_to)) {
-      const chosenEmail = resource.email_to || this.config.email_to;
-      console.log(`[Alert] Email target for ${resource.name}: ${chosenEmail || 'none'} (enabled=${this.emailEnabled})`);
       promises.push(this.sendEmail(resource, message, incident.type, stats));
     } else {
       if (!this.emailEnabled) {
-        console.log(`[Alert] Email disabled via config; skipping email for ${resource.name}`);
+        // Email globally disabled
       } else {
-        console.log(`[Alert] No email target for ${resource.name}; skipping email`);
+        // No email target configured
       }
     }
 
@@ -198,6 +202,23 @@ class NotificationService {
     graph += `0ms${' '.repeat(Math.max(0, times.length - 5))}${(maxTime).toFixed(0)}ms`;
 
     return graph;
+  }
+
+  isInMaintenanceWindow(resourceId) {
+    try {
+      const db = require('./database');
+      const now = new Date().toISOString().split('.')[0];
+      const window = db.prepare(`
+        SELECT id FROM maintenance_windows
+        WHERE resource_id = ? AND start_time <= ? AND end_time > ?
+        LIMIT 1
+      `).get(resourceId, now, now);
+      
+      return !!window;
+    } catch (error) {
+      console.error('Error checking maintenance window:', error.message);
+      return false;
+    }
   }
 
   async sendWebhook(resource, message, type) {

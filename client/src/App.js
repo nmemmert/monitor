@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -42,17 +42,16 @@ function Dashboard() {
     sla_target: 99.9,
     email_to: '',
     maintenance_mode: false,
+    tags: '',
+    consecutive_failures_threshold: 1,
+    response_time_threshold: null,
   });
+  const [tagFilter, setTagFilter] = useState('');
   const [groupData, setGroupData] = useState({ name: '', description: '' });
+  const wsRef = useRef(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    loadResources();
-    const interval = setInterval(loadResources, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadResources = async () => {
+  const loadResources = useCallback(async () => {
     try {
       const response = await axios.get('/api/dashboard');
       setResources(response.data.resources);
@@ -60,7 +59,62 @@ function Dashboard() {
     } catch (error) {
       console.error('Error loading resources:', error);
     }
-  };
+  }, []);
+
+  const connectWebSocket = useCallback(() => {
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}`;
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        // Send initial ping to keep alive
+        ws.send(JSON.stringify({ type: 'ping' }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'dashboard') {
+            setResources(message.data.resources || []);
+            setGroups(message.data.groups || []);
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected, will use fallback polling');
+        wsRef.current = null;
+      };
+
+      wsRef.current = ws;
+    } catch (error) {
+      console.error('Error connecting WebSocket:', error);
+      loadResources();
+    }
+  }, [loadResources]);
+
+  useEffect(() => {
+    // Try to connect via WebSocket
+    connectWebSocket();
+
+    // Fallback: poll every 15 seconds if WebSocket isn't available
+    const fallbackInterval = setInterval(loadResources, 15000);
+    
+    return () => {
+      clearInterval(fallbackInterval);
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, [connectWebSocket, loadResources]);
 
   const handleCreateGroup = async (e) => {
     e.preventDefault();
@@ -95,6 +149,9 @@ function Dashboard() {
         sla_target: 99.9,
         email_to: '',
         maintenance_mode: false,
+        tags: '',
+        consecutive_failures_threshold: 1,
+        response_time_threshold: null,
       });
       loadResources();
     } catch (error) {
@@ -132,6 +189,48 @@ function Dashboard() {
     }
   };
 
+  const handleExportCSV = async () => {
+    try {
+      const response = await axios.get('/api/resources/export', {
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `resources-${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentChild.removeChild(link);
+    } catch (error) {
+      console.error('Error exporting resources:', error);
+      alert('Error exporting resources');
+    }
+  };
+
+  const handleImportCSV = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const response = await axios.post('/api/resources/import', text, {
+        headers: { 'Content-Type': 'text/csv' }
+      });
+
+      alert(`Imported ${response.data.count} resources successfully!`);
+      if (response.data.errors.length > 0) {
+        alert(`Errors:\n${response.data.errors.join('\n')}`);
+      }
+      loadResources();
+    } catch (error) {
+      console.error('Error importing resources:', error);
+      alert('Error importing resources');
+    }
+
+    // Reset file input
+    e.target.value = '';
+  };
+
   const toggleGroup = (groupId) => {
     setCollapsedGroups(prev => ({
       ...prev,
@@ -139,7 +238,15 @@ function Dashboard() {
     }));
   };
 
-  const groupResourcesMap = resources.reduce((acc, r) => {
+  // Filter resources by tag
+  const filteredResources = tagFilter
+    ? resources.filter(r => {
+        const tags = (r.tags || '').toLowerCase();
+        return tags.includes(tagFilter.toLowerCase());
+      })
+    : resources;
+
+  const groupResourcesMap = filteredResources.reduce((acc, r) => {
     const gid = r.group_id || 'ungrouped';
     if (!acc[gid]) acc[gid] = [];
     acc[gid].push(r);
@@ -247,13 +354,33 @@ function Dashboard() {
     <div className="container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <h2>SkyWatch Dashboard</h2>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            placeholder="Filter by tag"
+            value={tagFilter}
+            onChange={(e) => setTagFilter(e.target.value)}
+            style={{ padding: '0.5rem 0.75rem', borderRadius: '4px', border: '1px solid #ddd', minWidth: '160px' }}
+          />
           <button className="btn btn-secondary" onClick={() => setShowGroupModal(true)}>
             + New Group
           </button>
           <button className="btn btn-primary" onClick={() => setShowModal(true)}>
             + Add Resource
           </button>
+          <button className="btn btn-secondary" onClick={handleExportCSV}>
+            ⬇ Export CSV
+          </button>
+          <button className="btn btn-secondary" onClick={() => document.getElementById('csv-import').click()}>
+            ⬆ Import CSV
+          </button>
+          <input 
+            id="csv-import" 
+            type="file" 
+            accept=".csv" 
+            style={{ display: 'none' }}
+            onChange={handleImportCSV}
+          />
         </div>
       </div>
 
@@ -261,6 +388,11 @@ function Dashboard() {
         <div className="empty-state">
           <h3>No resources yet</h3>
           <p>Add your first resource to start monitoring</p>
+        </div>
+      ) : filteredResources.length === 0 ? (
+        <div className="empty-state">
+          <h3>No resources match filter</h3>
+          <p>Try adjusting your tag filter</p>
         </div>
       ) : (
         <div>
@@ -511,6 +643,39 @@ function Dashboard() {
                 />
               </div>
 
+              <div className="form-group">
+                <label>Tags (comma-separated, e.g., frontend,production,critical)</label>
+                <input
+                  type="text"
+                  placeholder="Enter tags to organize resources"
+                  value={formData.tags || ''}
+                  onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Consecutive Failures Before Alert</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={formData.consecutive_failures_threshold || 1}
+                    onChange={(e) => setFormData({ ...formData, consecutive_failures_threshold: parseInt(e.target.value) })}
+                  />
+                  <small style={{ color: '#666', fontSize: '0.85rem' }}>Alert only after this many consecutive failures</small>
+                </div>
+                <div className="form-group">
+                  <label>Response Time Threshold (ms)</label>
+                  <input
+                    type="number"
+                    placeholder="e.g., 2000"
+                    value={formData.response_time_threshold || ''}
+                    onChange={(e) => setFormData({ ...formData, response_time_threshold: e.target.value ? parseInt(e.target.value) : null })}
+                  />
+                  <small style={{ color: '#666', fontSize: '0.85rem' }}>Alert if response time exceeds this value</small>
+                </div>
+              </div>
+
               <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowModal(false)}>
                   Cancel
@@ -673,6 +838,39 @@ function Dashboard() {
                 />
               </div>
 
+              <div className="form-group">
+                <label>Tags (comma-separated)</label>
+                <input
+                  type="text"
+                  placeholder="Enter tags to organize resources"
+                  value={editData.tags || ''}
+                  onChange={(e) => setEditData({ ...editData, tags: e.target.value })}
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Consecutive Failures Before Alert</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editData.consecutive_failures_threshold || 1}
+                    onChange={(e) => setEditData({ ...editData, consecutive_failures_threshold: parseInt(e.target.value) })}
+                  />
+                  <small style={{ color: '#666', fontSize: '0.85rem' }}>Alert only after this many consecutive failures</small>
+                </div>
+                <div className="form-group">
+                  <label>Response Time Threshold (ms)</label>
+                  <input
+                    type="number"
+                    placeholder="e.g., 2000"
+                    value={editData.response_time_threshold || ''}
+                    onChange={(e) => setEditData({ ...editData, response_time_threshold: e.target.value ? parseInt(e.target.value) : null })}
+                  />
+                  <small style={{ color: '#666', fontSize: '0.85rem' }}>Alert if response time exceeds this value</small>
+                </div>
+              </div>
+
               <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowEditModal(false)}>
                   Cancel
@@ -712,11 +910,20 @@ function ResourceDetail() {
   const [slaLoading, setSlaLoading] = useState(false);
   const slaWindow = 24;
 
+  const [maintenanceWindows, setMaintenanceWindows] = useState([]);
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [maintenanceForm, setMaintenanceForm] = useState({
+    start_time: '',
+    end_time: '',
+    reason: ''
+  });
+
   useEffect(() => {
     loadResource();
     loadChecks();
     loadIncidents();
     loadSla();
+    loadMaintenanceWindows();
     const interval = setInterval(loadResource, 5000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -790,6 +997,41 @@ function ResourceDetail() {
       console.error('Error loading SLA summary:', error);
     } finally {
       setSlaLoading(false);
+    }
+  };
+
+  const loadMaintenanceWindows = async () => {
+    try {
+      const response = await axios.get(`/api/resources/${id}/maintenance-windows`);
+      setMaintenanceWindows(response.data.windows || []);
+    } catch (error) {
+      console.error('Error loading maintenance windows:', error);
+    }
+  };
+
+  const handleCreateMaintenanceWindow = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(`/api/resources/${id}/maintenance-windows`, maintenanceForm);
+      setShowMaintenanceModal(false);
+      setMaintenanceForm({ start_time: '', end_time: '', reason: '' });
+      loadMaintenanceWindows();
+      alert('Maintenance window created');
+    } catch (error) {
+      console.error('Error creating maintenance window:', error);
+      alert('Error creating maintenance window');
+    }
+  };
+
+  const handleDeleteMaintenanceWindow = async (windowId) => {
+    if (window.confirm('Delete this maintenance window?')) {
+      try {
+        await axios.delete(`/api/maintenance-windows/${windowId}`);
+        loadMaintenanceWindows();
+      } catch (error) {
+        console.error('Error deleting maintenance window:', error);
+        alert('Error deleting maintenance window');
+      }
     }
   };
 
@@ -1055,6 +1297,92 @@ function ResourceDetail() {
           </tbody>
         </table>
       </div>
+
+      <div className="detail-section">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2>Maintenance Windows</h2>
+          <button className="btn btn-primary" onClick={() => setShowMaintenanceModal(true)}>
+            + Schedule Maintenance
+          </button>
+        </div>
+        {maintenanceWindows.length === 0 ? (
+          <p style={{ color: '#666', textAlign: 'center', padding: '2rem' }}>No maintenance windows scheduled</p>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #ddd' }}>
+                <th style={{ padding: '0.75rem', textAlign: 'left' }}>Start Time</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left' }}>End Time</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left' }}>Reason</th>
+                <th style={{ padding: '0.75rem', textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {maintenanceWindows.map(window => (
+                <tr key={window.id} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '0.75rem' }}>{formatLocalTime(window.start_time)}</td>
+                  <td style={{ padding: '0.75rem' }}>{formatLocalTime(window.end_time)}</td>
+                  <td style={{ padding: '0.75rem', color: '#666' }}>{window.reason || '-'}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                    <button 
+                      className="btn btn-danger" 
+                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.85rem' }}
+                      onClick={() => handleDeleteMaintenanceWindow(window.id)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {showMaintenanceModal && (
+        <div className="modal-overlay" onClick={() => setShowMaintenanceModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2>Schedule Maintenance Window</h2>
+            <form onSubmit={handleCreateMaintenanceWindow}>
+              <div className="form-group">
+                <label>Start Time *</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={maintenanceForm.start_time}
+                  onChange={(e) => setMaintenanceForm({ ...maintenanceForm, start_time: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>End Time *</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={maintenanceForm.end_time}
+                  onChange={(e) => setMaintenanceForm({ ...maintenanceForm, end_time: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>Reason (Optional)</label>
+                <textarea
+                  rows="3"
+                  placeholder="Planned maintenance, server upgrade, etc."
+                  value={maintenanceForm.reason}
+                  onChange={(e) => setMaintenanceForm({ ...maintenanceForm, reason: e.target.value })}
+                />
+              </div>
+              <div className="form-actions">
+                <button type="button" className="btn" onClick={() => setShowMaintenanceModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Schedule
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
