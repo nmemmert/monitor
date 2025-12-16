@@ -48,9 +48,6 @@ export const formatLocalTime = (timestamp, options = {}) => {
   
   if (timeZone) {
     defaultOptions.timeZone = timeZone;
-    console.log('Formatting timestamp with timezone:', timeZone, 'Original:', timestamp, 'Result:', date.toLocaleString('en-US', defaultOptions));
-  } else {
-    console.warn('No server timezone found in localStorage, using browser default');
   }
   
   return date.toLocaleString('en-US', { ...defaultOptions, ...options });

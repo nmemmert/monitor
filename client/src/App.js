@@ -71,7 +71,6 @@ function Dashboard() {
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        console.log('WebSocket connected');
         // Send initial ping to keep alive
         ws.send(JSON.stringify({ type: 'ping' }));
       };
@@ -93,7 +92,6 @@ function Dashboard() {
       };
 
       ws.onclose = () => {
-        console.log('WebSocket disconnected, will use fallback polling');
         wsRef.current = null;
       };
 

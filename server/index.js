@@ -1062,7 +1062,6 @@ app.post('/api/test-webhook', async (req, res) => {
 // Clear cache endpoint for debugging
 app.post('/api/cache/clear', (req, res) => {
   cache.clear();
-  console.log('Cache cleared at', new Date().toISOString());
   res.json({ message: 'Cache cleared successfully' });
 });
 

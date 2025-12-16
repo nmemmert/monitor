@@ -51,19 +51,16 @@ class NotificationService {
   async sendAlert(resource, incident, stats = null) {
     // Check if incident is acknowledged
     if (incident.acknowledged) {
-      console.log(`Incident ${incident.id} already acknowledged, skipping alert`);
       return;
     }
 
     // Check maintenance windows
     if (this.isInMaintenanceWindow(resource.id)) {
-      console.log(`Resource ${resource.name} is in maintenance window, skipping alert`);
       return;
     }
 
     // Check quiet hours
     if (this.isQuietHours(resource)) {
-      console.log(`Resource ${resource.name} is in quiet hours, skipping alert`);
       return;
     }
 
@@ -176,7 +173,6 @@ class NotificationService {
         text: message,
         html: htmlContent,
       });
-      console.log(`Email sent for ${resource.name} to ${emailTo}`);
     } catch (error) {
       console.error('Email error:', error.message);
     }
@@ -239,7 +235,6 @@ class NotificationService {
         message,
         timestamp: new Date().toISOString(),
       });
-      console.log(`Webhook sent for ${resource.name}`);
     } catch (error) {
       console.error('Webhook error:', error.message);
     }
