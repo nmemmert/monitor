@@ -14,6 +14,11 @@ import {
 import './App.css';
 import { formatChartTime } from './utils/timeUtils';
 
+const asNumberOrZero = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+};
+
 function History() {
   const [historyData, setHistoryData] = useState([]);
   const [days, setDays] = useState(7);
@@ -214,22 +219,29 @@ function History() {
                 {showTrends && resource.trendsData && (
                   <div className="chart-container" style={{ height: '400px', marginBottom: '1.5rem', background: '#fafafa', padding: '1rem', borderRadius: '6px' }}>
                     <h4 style={{ marginBottom: '1rem', color: '#667eea' }}>Week-over-Week Comparison</h4>
+                    {(() => {
+                      const comparison = resource.trendsData?.comparison || {};
+                      const responseTimeChange = asNumberOrZero(comparison.response_time_change);
+                      const uptimeChange = asNumberOrZero(comparison.uptime_change);
+                      return (
                     <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
                       <div>
                         <strong>Response Time Change:</strong>{' '}
-                        <span style={{ color: resource.trendsData.comparison.response_time_change >= 0 ? '#f44336' : '#4caf50' }}>
-                          {resource.trendsData.comparison.response_time_change >= 0 ? '+' : ''}
-                          {resource.trendsData.comparison.response_time_change.toFixed(1)}ms
+                        <span style={{ color: responseTimeChange >= 0 ? '#f44336' : '#4caf50' }}>
+                          {responseTimeChange >= 0 ? '+' : ''}
+                          {responseTimeChange.toFixed(1)}ms
                         </span>
                       </div>
                       <div>
                         <strong>Uptime Change:</strong>{' '}
-                        <span style={{ color: resource.trendsData.comparison.uptime_change >= 0 ? '#4caf50' : '#f44336' }}>
-                          {resource.trendsData.comparison.uptime_change >= 0 ? '+' : ''}
-                          {resource.trendsData.comparison.uptime_change.toFixed(1)}%
+                        <span style={{ color: uptimeChange >= 0 ? '#4caf50' : '#f44336' }}>
+                          {uptimeChange >= 0 ? '+' : ''}
+                          {uptimeChange.toFixed(1)}%
                         </span>
                       </div>
                     </div>
+                      );
+                    })()}
                     <ResponsiveContainer width="100%" height="90%">
                       <ComposedChart data={prepareTrendsChartData(resource.trendsData)} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
@@ -375,8 +387,8 @@ function prepareTrendsChartData(trendsData) {
     
     result.push({
       day: `Day ${i + 1}`,
-      currentResponseTime: currentDay ? currentDay.avg_response_time : null,
-      previousResponseTime: previousDay ? previousDay.avg_response_time : null,
+      currentResponseTime: currentDay ? asNumberOrZero(currentDay.avg_response_time) : null,
+      previousResponseTime: previousDay ? asNumberOrZero(previousDay.avg_response_time) : null,
     });
   }
   
