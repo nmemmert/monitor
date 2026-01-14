@@ -516,6 +516,11 @@ app.post('/api/notifications/clear', (req, res) => {
 
 // Get settings
 app.get('/api/settings', (req, res) => {
+  // Prevent browser caching - always fetch fresh data
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  
   // Try to get settings from database first, fallback to process.env
   try {
     const dbSettings = {};
