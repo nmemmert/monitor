@@ -516,41 +516,84 @@ app.post('/api/notifications/clear', (req, res) => {
 
 // Get settings
 app.get('/api/settings', (req, res) => {
-  const settings = {
-    email_enabled: process.env.EMAIL_ENABLED === 'true',
-    email_host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-    email_port: parseInt(process.env.EMAIL_PORT) || 587,
-    email_user: process.env.EMAIL_USER || '',
-    email_pass: '', // Don't send password to client
-    email_from: process.env.EMAIL_FROM || '',
-    email_to: process.env.EMAIL_TO || '',
-    webhook_enabled: process.env.WEBHOOK_ENABLED === 'true',
-    webhook_url: process.env.WEBHOOK_URL || '',
-    check_interval: parseInt(process.env.CHECK_INTERVAL) || 60000,
-    timeout: parseInt(process.env.TIMEOUT) || 5000,
-    timezone: process.env.TIMEZONE || 'UTC',
-    // Data retention settings
-    retention_days: parseInt(process.env.RETENTION_DAYS) || 7,
-    auto_cleanup_enabled: process.env.AUTO_CLEANUP_ENABLED === 'true',
-    // Incident thresholds
-    consecutive_failures: parseInt(process.env.CONSECUTIVE_FAILURES) || 3,
-    grace_period: parseInt(process.env.GRACE_PERIOD) || 300,
-    downtime_threshold: parseInt(process.env.DOWNTIME_THRESHOLD) || 600,
-    // Alert retry logic
-    alert_retry_count: parseInt(process.env.ALERT_RETRY_COUNT) || 3,
-    alert_retry_delay: parseInt(process.env.ALERT_RETRY_DELAY) || 60,
-    fallback_webhook: process.env.FALLBACK_WEBHOOK || '',
-    // Alert scheduling
-    global_quiet_hours_start: process.env.GLOBAL_QUIET_HOURS_START || '',
-    global_quiet_hours_end: process.env.GLOBAL_QUIET_HOURS_END || '',
-    escalation_hours: parseInt(process.env.ESCALATION_HOURS) || 4,
-    // Dashboard customization
-    default_sort: process.env.DEFAULT_SORT || 'name',
-    items_per_page: parseInt(process.env.ITEMS_PER_PAGE) || 20,
-    refresh_interval: parseInt(process.env.REFRESH_INTERVAL) || 5000,
-    theme: process.env.THEME || 'light',
-  };
-  res.json(settings);
+  // Try to get settings from database first, fallback to process.env
+  try {
+    const dbSettings = {};
+    const rows = db.prepare('SELECT key, value FROM settings').all();
+    for (const row of rows) {
+      dbSettings[row.key] = row.value;
+    }
+
+    // Build response with database values taking precedence over env vars
+    const settings = {
+      email_enabled: (dbSettings.email_enabled || process.env.EMAIL_ENABLED) === 'true',
+      email_host: dbSettings.email_host || process.env.EMAIL_HOST || 'smtp.gmail.com',
+      email_port: parseInt(dbSettings.email_port || process.env.EMAIL_PORT) || 587,
+      email_user: dbSettings.email_user || process.env.EMAIL_USER || '',
+      email_pass: '', // Don't send password to client
+      email_from: dbSettings.email_from || process.env.EMAIL_FROM || '',
+      email_to: dbSettings.email_to || process.env.EMAIL_TO || '',
+      webhook_enabled: (dbSettings.webhook_enabled || process.env.WEBHOOK_ENABLED) === 'true',
+      webhook_url: dbSettings.webhook_url || process.env.WEBHOOK_URL || '',
+      check_interval: parseInt(dbSettings.check_interval || process.env.CHECK_INTERVAL) || 60000,
+      timeout: parseInt(dbSettings.timeout || process.env.TIMEOUT) || 5000,
+      timezone: dbSettings.timezone || process.env.TIMEZONE || 'UTC',
+      // Data retention settings
+      retention_days: parseInt(dbSettings.retention_days || process.env.RETENTION_DAYS) || 7,
+      auto_cleanup_enabled: (dbSettings.auto_cleanup_enabled || process.env.AUTO_CLEANUP_ENABLED) === 'true',
+      // Incident thresholds
+      consecutive_failures: parseInt(dbSettings.consecutive_failures || process.env.CONSECUTIVE_FAILURES) || 3,
+      grace_period: parseInt(dbSettings.grace_period || process.env.GRACE_PERIOD) || 300,
+      downtime_threshold: parseInt(dbSettings.downtime_threshold || process.env.DOWNTIME_THRESHOLD) || 600,
+      // Alert retry logic
+      alert_retry_count: parseInt(dbSettings.alert_retry_count || process.env.ALERT_RETRY_COUNT) || 3,
+      alert_retry_delay: parseInt(dbSettings.alert_retry_delay || process.env.ALERT_RETRY_DELAY) || 60,
+      fallback_webhook: dbSettings.fallback_webhook || process.env.FALLBACK_WEBHOOK || '',
+      // Alert scheduling
+      global_quiet_hours_start: dbSettings.global_quiet_hours_start || process.env.GLOBAL_QUIET_HOURS_START || '',
+      global_quiet_hours_end: dbSettings.global_quiet_hours_end || process.env.GLOBAL_QUIET_HOURS_END || '',
+      escalation_hours: parseInt(dbSettings.escalation_hours || process.env.ESCALATION_HOURS) || 4,
+      // Dashboard customization
+      default_sort: dbSettings.default_sort || process.env.DEFAULT_SORT || 'name',
+      items_per_page: parseInt(dbSettings.items_per_page || process.env.ITEMS_PER_PAGE) || 20,
+      refresh_interval: parseInt(dbSettings.refresh_interval || process.env.REFRESH_INTERVAL) || 5000,
+      theme: dbSettings.theme || process.env.THEME || 'light',
+    };
+    res.json(settings);
+  } catch (error) {
+    console.error('Error reading settings:', error);
+    // Fallback to env vars only if database read fails
+    const settings = {
+      email_enabled: process.env.EMAIL_ENABLED === 'true',
+      email_host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+      email_port: parseInt(process.env.EMAIL_PORT) || 587,
+      email_user: process.env.EMAIL_USER || '',
+      email_pass: '', // Don't send password to client
+      email_from: process.env.EMAIL_FROM || '',
+      email_to: process.env.EMAIL_TO || '',
+      webhook_enabled: process.env.WEBHOOK_ENABLED === 'true',
+      webhook_url: process.env.WEBHOOK_URL || '',
+      check_interval: parseInt(process.env.CHECK_INTERVAL) || 60000,
+      timeout: parseInt(process.env.TIMEOUT) || 5000,
+      timezone: process.env.TIMEZONE || 'UTC',
+      retention_days: parseInt(process.env.RETENTION_DAYS) || 7,
+      auto_cleanup_enabled: process.env.AUTO_CLEANUP_ENABLED === 'true',
+      consecutive_failures: parseInt(process.env.CONSECUTIVE_FAILURES) || 3,
+      grace_period: parseInt(process.env.GRACE_PERIOD) || 300,
+      downtime_threshold: parseInt(process.env.DOWNTIME_THRESHOLD) || 600,
+      alert_retry_count: parseInt(process.env.ALERT_RETRY_COUNT) || 3,
+      alert_retry_delay: parseInt(process.env.ALERT_RETRY_DELAY) || 60,
+      fallback_webhook: process.env.FALLBACK_WEBHOOK || '',
+      global_quiet_hours_start: process.env.GLOBAL_QUIET_HOURS_START || '',
+      global_quiet_hours_end: process.env.GLOBAL_QUIET_HOURS_END || '',
+      escalation_hours: parseInt(process.env.ESCALATION_HOURS) || 4,
+      default_sort: process.env.DEFAULT_SORT || 'name',
+      items_per_page: parseInt(process.env.ITEMS_PER_PAGE) || 20,
+      refresh_interval: parseInt(process.env.REFRESH_INTERVAL) || 5000,
+      theme: process.env.THEME || 'light',
+    };
+    res.json(settings);
+  }
 });
 
 // Save settings
@@ -657,7 +700,7 @@ THEME=${theme || 'light'}
   try {
     fs.writeFileSync(envPath, envContent);
 
-    // Keep runtime config in sync without requiring a restart
+    // Update runtime config in process.env - these changes persist until server restart
     process.env.TIMEZONE = timezone || 'UTC';
     process.env.EMAIL_ENABLED = String(email_enabled);
     process.env.EMAIL_HOST = email_host;
@@ -686,6 +729,28 @@ THEME=${theme || 'light'}
     process.env.REFRESH_INTERVAL = String(refresh_interval || 5000);
     process.env.THEME = theme || 'light';
 
+    // Also save to database for persistence
+    const settingsTable = [
+      { key: 'email_enabled', value: String(email_enabled) },
+      { key: 'email_host', value: email_host },
+      { key: 'email_port', value: String(email_port) },
+      { key: 'email_user', value: email_user },
+      { key: 'email_from', value: email_from },
+      { key: 'email_to', value: email_to },
+      { key: 'webhook_enabled', value: String(webhook_enabled) },
+      { key: 'webhook_url', value: webhook_url },
+      { key: 'timezone', value: timezone || 'UTC' },
+      { key: 'retention_days', value: String(retention_days || 7) },
+      { key: 'consecutive_failures', value: String(consecutive_failures || 3) },
+    ];
+
+    for (const setting of settingsTable) {
+      db.prepare(`
+        INSERT OR REPLACE INTO settings (key, value, updated_at) 
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+      `).run(setting.key, setting.value);
+    }
+
     notificationService.setConfig({
       email_enabled: email_enabled === true || email_enabled === 'true',
       email_host,
@@ -700,6 +765,7 @@ THEME=${theme || 'light'}
 
     res.json({ message: 'Settings saved successfully' });
   } catch (error) {
+    console.error('Failed to save settings:', error);
     res.status(500).json({ error: 'Failed to save settings' });
   }
 });
