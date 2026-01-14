@@ -676,20 +676,20 @@ app.post('/api/settings', (req, res) => {
     return res.status(400).json({ error: 'Timeout must be at least 1000ms' });
   }
 
-  const envContent = `EMAIL_ENABLED=${email_enabled}
-EMAIL_HOST=${email_host}
-EMAIL_PORT=${email_port}
-EMAIL_USER=${email_user}
+  const envContent = `EMAIL_ENABLED=${email_enabled || false}
+EMAIL_HOST=${email_host || 'smtp.gmail.com'}
+EMAIL_PORT=${email_port || 587}
+EMAIL_USER=${email_user || ''}
 EMAIL_PASS=${email_pass || process.env.EMAIL_PASS || ''}
-EMAIL_FROM=${email_from}
-EMAIL_TO=${email_to}
-WEBHOOK_ENABLED=${webhook_enabled}
-WEBHOOK_URL=${webhook_url}
-CHECK_INTERVAL=${check_interval}
-TIMEOUT=${timeout}
+EMAIL_FROM=${email_from || ''}
+EMAIL_TO=${email_to || ''}
+WEBHOOK_ENABLED=${webhook_enabled || false}
+WEBHOOK_URL=${webhook_url || ''}
+CHECK_INTERVAL=${check_interval || 60000}
+TIMEOUT=${timeout || 5000}
 TIMEZONE=${timezone || 'UTC'}
 RETENTION_DAYS=${retention_days || 7}
-AUTO_CLEANUP_ENABLED=${auto_cleanup_enabled}
+AUTO_CLEANUP_ENABLED=${auto_cleanup_enabled || false}
 CONSECUTIVE_FAILURES=${consecutive_failures || 3}
 GRACE_PERIOD=${grace_period || 300}
 DOWNTIME_THRESHOLD=${downtime_threshold || 600}
