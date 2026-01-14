@@ -22,6 +22,7 @@ const asNumberOrZero = (value) => {
 function History() {
   const [historyData, setHistoryData] = useState([]);
   const [days, setDays] = useState(7);
+  const [maxDays, setMaxDays] = useState(30);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showAveraged, setShowAveraged] = useState(true);
@@ -29,7 +30,28 @@ function History() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalItems, setTotalItems] = useState(0);
+  const [effectiveDays, setEffectiveDays] = useState(7);
+  const [limitedByRetention, setLimitedByRetention] = useState(false);
 
+  useEffect(() => {
+    // Fetch retention setting from server
+    const fetchRetention = async () => {
+      try {
+        const response = await axios.get('/api/settings');
+        const retentionDays = response.data.retention_days || 30;
+        setMaxDays(parseInt(retentionDays));
+        // Adjust current days if it exceeds retention
+        if (days > retentionDays) {
+          setDays(parseInt(retentionDays));
+        }
+      } catch (error) {
+        // Failed to fetch retention setting, use default
+      }
+    };
+    fetchRetention();
+  }, []);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const loadHistory = async () => {
       setLoading(true);
@@ -47,6 +69,8 @@ function History() {
         if (response.data.resources && Array.isArray(response.data.resources)) {
           data = response.data.resources;
           total = response.data.total || data.length;
+          setEffectiveDays(response.data.effective_days || days);
+          setLimitedByRetention(Boolean(response.data.limited_by_retention));
         } else if (Array.isArray(response.data)) {
           data = response.data;
           total = data.length;
@@ -61,7 +85,6 @@ function History() {
               });
               return { ...resource, trendsData: trendsResponse.data };
             } catch (err) {
-              console.error(`Error loading trends for resource ${resource.id}:`, err);
               return resource;
             }
           });
@@ -72,7 +95,6 @@ function History() {
         setTotalItems(total);
         setLoading(false);
       } catch (error) {
-        console.error('Error loading history:', error);
         setError(error.message);
         setLoading(false);
       }
@@ -86,6 +108,18 @@ function History() {
 
   return (
     <div className="container">
+      {limitedByRetention && (
+        <div style={{ 
+          padding: '1rem', 
+          marginBottom: '1rem', 
+          backgroundColor: '#fff3cd', 
+          border: '1px solid #ffc107', 
+          borderRadius: '4px',
+          color: '#856404'
+        }}>
+          ⚠️ Data limited to {effectiveDays} days (server retention setting). Requested {days} days.
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
         <h2>Monitoring History</h2>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -95,6 +129,8 @@ function History() {
                 key={d}
                 className={`btn ${days === d ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setDays(d)}
+                disabled={d > maxDays}
+                style={{ opacity: d > maxDays ? 0.5 : 1 }}
               >
                 {d} Days
               </button>

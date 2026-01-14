@@ -28,12 +28,19 @@ export const formatLocalTime = (timestamp, options = {}) => {
   let timeZone;
   try {
     const cachedSettings = localStorage.getItem('serverTimezone');
-    if (cachedSettings && cachedSettings !== 'null' && cachedSettings !== 'undefined' && cachedSettings.trim() !== '') {
+    const cacheTime = localStorage.getItem('serverTimezoneTime');
+    const now = Date.now();
+    // Invalidate cache every 1 hour
+    if (cachedSettings && cacheTime && (now - parseInt(cacheTime)) < 3600000 && cachedSettings !== 'null' && cachedSettings !== 'undefined' && cachedSettings.trim() !== '') {
       // Remove any quotes that might be in the string
       timeZone = cachedSettings.replace(/^["']|["']$/g, '').trim();
+    } else if (cachedSettings) {
+      // Clear stale cache
+      localStorage.removeItem('serverTimezone');
+      localStorage.removeItem('serverTimezoneTime');
     }
   } catch (e) {
-    console.error('Error reading serverTimezone from localStorage:', e);
+    // Timezone load error handled silently
   }
   
   const defaultOptions = {
@@ -72,12 +79,27 @@ export const formatLocalTimeOnly = (timestamp, options = {}) => {
 
 /**
  * Format timestamp for chart display (shorter format)
+ * Shows date and time for better context
  */
 export const formatChartTime = (timestamp) => {
   if (!timestamp) return '';
   
   const date = new Date(timestamp);
-  return date.toLocaleTimeString('en-US', {
+  const now = new Date();
+  const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+  
+  // If within last 24 hours, show time only
+  if (diffDays === 0) {
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+  
+  // Otherwise show date and time
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
   });

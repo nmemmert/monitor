@@ -5,6 +5,7 @@ import './App.css';
 function SLA() {
   const [slaData, setSlaData] = useState([]);
   const [days, setDays] = useState(30);
+  const [maxDays, setMaxDays] = useState(30);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -13,6 +14,25 @@ function SLA() {
   const [effectiveDays, setEffectiveDays] = useState(30);
   const [limitedByRetention, setLimitedByRetention] = useState(false);
 
+  useEffect(() => {
+    // Fetch retention setting from server
+    const fetchRetention = async () => {
+      try {
+        const response = await axios.get('/api/settings');
+        const retentionDays = response.data.retention_days || 30;
+        setMaxDays(parseInt(retentionDays));
+        // Adjust current days if it exceeds retention
+        if (days > retentionDays) {
+          setDays(parseInt(retentionDays));
+        }
+      } catch (error) {
+        // Failed to fetch retention setting, use default
+      }
+    };
+    fetchRetention();
+  }, []);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const loadSLAData = React.useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -25,7 +45,6 @@ function SLA() {
       setLimitedByRetention(Boolean(response.data.limited_by_retention));
       setLoading(false);
     } catch (error) {
-      console.error('Error loading SLA data:', error);
       setError(error.message);
       setLoading(false);
     }
@@ -43,11 +62,23 @@ function SLA() {
     meetingTarget: slaData.filter(s => s.meets_target).length,
     avgUptime: (slaData.reduce((sum, s) => sum + parseFloat(s.actual_uptime), 0) / slaData.length).toFixed(2),
     totalIncidents: slaData.reduce((sum, s) => sum + s.incidents, 0),
-    totalDowntime: slaData.reduce((sum, s) => sum + s.downtime_minutes, 0),
+    totalDowntime: (slaData.reduce((sum, s) => sum + s.downtime_minutes, 0) / 60).toFixed(2), // Convert to hours
   } : null;
 
   return (
     <div className="container">
+      {limitedByRetention && (
+        <div style={{ 
+          padding: '1rem', 
+          marginBottom: '1rem', 
+          backgroundColor: '#fff3cd', 
+          border: '1px solid #ffc107', 
+          borderRadius: '4px',
+          color: '#856404'
+        }}>
+          ⚠️ SLA data limited to {effectiveDays} days (server retention setting). Requested {days} days.
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
         <h2>SLA Dashboard</h2>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -56,6 +87,8 @@ function SLA() {
               key={d}
               className={`btn ${days === d ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setDays(d)}
+              disabled={d > maxDays}
+              style={{ opacity: d > maxDays ? 0.5 : 1 }}
             >
               {d} Days
             </button>

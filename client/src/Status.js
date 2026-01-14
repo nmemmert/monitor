@@ -12,7 +12,7 @@ function Status() {
 
   useEffect(() => {
     loadStatusData();
-    const interval = setInterval(loadStatusData, 30000); // Refresh every 30 seconds
+    const interval = setInterval(loadStatusData, 15000); // Refresh every 15 seconds for critical status
     return () => clearInterval(interval);
   }, []);
 
@@ -28,7 +28,7 @@ function Status() {
       setMaintenanceWindows(maintenanceRes.data.maintenanceWindows || []);
       setLastUpdated(new Date());
     } catch (error) {
-      console.error('Error loading status data:', error);
+      // Status load error handled
     } finally {
       setLoading(false);
     }

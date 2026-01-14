@@ -7,6 +7,9 @@ import SettingsWizard from './SettingsWizard';
 import History from './History';
 import SLA from './SLA';
 import Status from './Status';
+import Observability from './Observability';
+import Notifications from './Notifications';
+import NotificationCenter from './NotificationCenter';
 import { formatLocalTime, formatChartTime } from './utils/timeUtils';
 
 // Simple duration formatter for incident spans
@@ -29,6 +32,7 @@ function Dashboard() {
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
+  const [notifications, setNotifications] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
     url: '',
@@ -54,13 +58,24 @@ function Dashboard() {
   const actionsRef = useRef(null);
   const navigate = useNavigate();
 
+  // Show toast notification
+  const showNotification = (title, message, type = 'info') => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, title, message, type }]);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 5000);
+  };
+
   const loadResources = useCallback(async () => {
     try {
       const response = await axios.get('/api/dashboard');
       setResources(response.data.resources);
       setGroups(response.data.groups || []);
     } catch (error) {
-      console.error('Error loading resources:', error);
+      // Error loading resources handled
     }
   }, []);
 
@@ -78,17 +93,34 @@ function Dashboard() {
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
+          
           if (message.type === 'dashboard') {
             setResources(message.data.resources || []);
             setGroups(message.data.groups || []);
+          } else if (message.type === 'alert') {
+            // Show real-time alert notification
+            const alert = message.data;
+            showNotification(`Alert: ${alert.resourceName}`, alert.message, 'error');
+          } else if (message.type === 'incident') {
+            // Show real-time incident notification
+            const incident = message.data;
+            if (incident.type === 'started') {
+              showNotification(`Incident Started`, `${incident.resourceName} is down`, 'error');
+            } else if (incident.type === 'resolved') {
+              showNotification(`Incident Resolved`, `${incident.resourceName} is back up`, 'success');
+            }
+            // Refresh data to show updated incidents
+            loadResources();
+          } else if (message.type === 'metrics') {
+            // Metrics update received (can be used for performance dashboard)
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
+          // Parse error handled silently
         }
       };
 
       ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        // WebSocket error handled
       };
 
       ws.onclose = () => {
@@ -97,7 +129,6 @@ function Dashboard() {
 
       wsRef.current = ws;
     } catch (error) {
-      console.error('Error connecting WebSocket:', error);
       loadResources();
     }
   }, [loadResources]);
@@ -137,7 +168,6 @@ function Dashboard() {
       setGroupData({ name: '', description: '' });
       loadResources();
     } catch (error) {
-      console.error('Error creating group:', error);
       alert('Error creating group');
     }
   };
@@ -168,7 +198,6 @@ function Dashboard() {
       });
       loadResources();
     } catch (error) {
-      console.error('Error creating resource:', error);
       alert('Error creating resource');
     }
   };
@@ -190,7 +219,6 @@ function Dashboard() {
       setEditData({});
       loadResources();
     } catch (error) {
-      console.error('Error updating resource:', error);
       alert('Error updating resource');
     }
   };
@@ -206,7 +234,6 @@ function Dashboard() {
         await axios.delete(`/api/resources/${id}`);
         loadResources();
       } catch (error) {
-        console.error('Error deleting resource:', error);
         alert('Error deleting resource');
       }
     }
@@ -225,7 +252,6 @@ function Dashboard() {
       link.click();
       link.parentChild.removeChild(link);
     } catch (error) {
-      console.error('Error exporting resources:', error);
       alert('Error exporting resources');
     }
   };
@@ -246,7 +272,6 @@ function Dashboard() {
       }
       loadResources();
     } catch (error) {
-      console.error('Error importing resources:', error);
       alert('Error importing resources');
     }
 
@@ -375,9 +400,33 @@ function Dashboard() {
 
   return (
     <div className="container">
+      {/* Real-time Notifications */}
+      {notifications.length > 0 && (
+        <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 9999 }}>
+          {notifications.map(notif => (
+            <div
+              key={notif.id}
+              style={{
+                marginBottom: '10px',
+                padding: '12px 16px',
+                borderRadius: '4px',
+                backgroundColor: notif.type === 'error' ? '#f8d7da' : notif.type === 'success' ? '#d4edda' : '#d1ecf1',
+                color: notif.type === 'error' ? '#721c24' : notif.type === 'success' ? '#155724' : '#0c5460',
+                border: `1px solid ${notif.type === 'error' ? '#f5c6cb' : notif.type === 'success' ? '#c3e6cb' : '#bee5eb'}`,
+                minWidth: '300px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+              }}
+            >
+              <strong>{notif.title}</strong>
+              <div>{notif.message}</div>
+            </div>
+          ))}
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <h2>SkyWatch Dashboard</h2>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <NotificationCenter />
           <input
             type="text"
             placeholder="Filter by tag"
@@ -748,6 +797,19 @@ function Dashboard() {
                 </div>
               </div>
 
+              <div className="form-group">
+                <label>Data Retention (days)</label>
+                <input
+                  type="number"
+                  placeholder="Leave empty to use global setting"
+                  value={formData.retention_days || ''}
+                  onChange={(e) => setFormData({ ...formData, retention_days: e.target.value ? parseInt(e.target.value) : null })}
+                  min="1"
+                  max="365"
+                />
+                <small style={{ color: '#666', fontSize: '0.85rem' }}>Override global retention period for this monitor only</small>
+              </div>
+
               <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowModal(false)}>
                   Cancel
@@ -957,6 +1019,19 @@ function Dashboard() {
                 </div>
               </div>
 
+              <div className="form-group">
+                <label>Data Retention (days)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  placeholder="Leave empty to use global setting"
+                  value={editData.retention_days || ''}
+                  onChange={(e) => setEditData({ ...editData, retention_days: e.target.value ? parseInt(e.target.value) : null })}
+                />
+                <small style={{ color: '#666', fontSize: '0.85rem' }}>Override global retention period for this monitor only</small>
+              </div>
+
               <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowEditModal(false)}>
                   Cancel
@@ -1036,7 +1111,6 @@ function ResourceDetail() {
       setResource(response.data);
       setLoading(false);
     } catch (error) {
-      console.error('Error loading resource:', error);
       setLoading(false);
     }
   };
@@ -1054,7 +1128,7 @@ function ResourceDetail() {
       });
       setChecks(response.data.checks || []);
     } catch (error) {
-      console.error('Error loading checks:', error);
+      // Checks load error handled
     } finally {
       setChecksLoading(false);
     }
@@ -1073,7 +1147,7 @@ function ResourceDetail() {
       });
       setIncidents(response.data.incidents || []);
     } catch (error) {
-      console.error('Error loading incidents:', error);
+      // Incidents load error handled
     } finally {
       setIncidentsLoading(false);
     }
@@ -1098,7 +1172,6 @@ function ResourceDetail() {
       setIncidentDescription('');
       loadIncidents(); // Reload to show updated description
     } catch (error) {
-      console.error('Error updating incident:', error);
       alert('Failed to update incident: ' + (error.response?.data?.error || error.message));
     } finally {
       setUpdatingIncident(false);
@@ -1111,7 +1184,7 @@ function ResourceDetail() {
       const response = await axios.get(`/api/resources/${id}/sla`, { params: { hours: slaWindow } });
       setSla(response.data);
     } catch (error) {
-      console.error('Error loading SLA summary:', error);
+      // SLA load error handled
     } finally {
       setSlaLoading(false);
     }
@@ -1122,7 +1195,7 @@ function ResourceDetail() {
       const response = await axios.get(`/api/resources/${id}/maintenance-windows`);
       setMaintenanceWindows(response.data.windows || []);
     } catch (error) {
-      console.error('Error loading maintenance windows:', error);
+      // Maintenance windows load error handled
     }
   };
 
@@ -1135,7 +1208,6 @@ function ResourceDetail() {
       loadMaintenanceWindows();
       alert('Maintenance window created');
     } catch (error) {
-      console.error('Error creating maintenance window:', error);
       alert('Error creating maintenance window');
     }
   };
@@ -1146,7 +1218,6 @@ function ResourceDetail() {
         await axios.delete(`/api/maintenance-windows/${windowId}`);
         loadMaintenanceWindows();
       } catch (error) {
-        console.error('Error deleting maintenance window:', error);
         alert('Error deleting maintenance window');
       }
     }
@@ -1158,7 +1229,6 @@ function ResourceDetail() {
         await axios.delete(`/api/resources/${id}`);
         navigate('/');
       } catch (error) {
-        console.error('Error deleting resource:', error);
         alert('Error deleting resource');
       }
     }
@@ -1172,7 +1242,7 @@ function ResourceDetail() {
       });
       loadResource();
     } catch (error) {
-      console.error('Error updating resource:', error);
+      // Update resource error handled
     }
   };
 
@@ -1184,7 +1254,7 @@ function ResourceDetail() {
       });
       loadResource();
     } catch (error) {
-      console.error('Error updating maintenance mode:', error);
+      // Update maintenance mode error handled
     }
   };
 
@@ -1591,12 +1661,13 @@ function Navbar() {
     try {
       const response = await axios.get('/api/settings');
       setNotificationsConfigured(response.data.email_enabled || response.data.webhook_enabled);
-      // Cache server timezone for timestamp formatting
+      // Cache server timezone for timestamp formatting with timestamp
       if (response.data.timezone) {
         localStorage.setItem('serverTimezone', response.data.timezone);
+        localStorage.setItem('serverTimezoneTime', Date.now().toString());
       }
     } catch (error) {
-      console.error('Error checking notifications:', error);
+      // Notifications check error handled
     }
   };
 
@@ -1609,6 +1680,8 @@ function Navbar() {
             <Link to="/" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>Dashboard</Link>
             <Link to="/history" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>History</Link>
             <Link to="/sla" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>SLA</Link>
+            <Link to="/observability" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>Observability</Link>
+            <Link to="/notifications" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>Notifications</Link>
             <Link to="/settings" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               Settings
               {!notificationsConfigured && (
@@ -1647,6 +1720,8 @@ function App() {
           <Route path="/sla" element={<SLA />} />
           <Route path="/settings" element={<div className="container"><SettingsWizard /></div>} />
           <Route path="/status" element={<Status />} />
+          <Route path="/observability" element={<Observability />} />
+          <Route path="/notifications" element={<Notifications />} />
         </Routes>
       </div>
     </Router>

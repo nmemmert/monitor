@@ -22,6 +22,7 @@ db.exec(`
     enabled INTEGER DEFAULT 1,
     maintenance_mode INTEGER DEFAULT 0,
     group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+    retention_days INTEGER DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -111,6 +112,20 @@ db.exec(`
     UNIQUE(resource_id, tag)
   );
 
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resource_id INTEGER,
+    incident_id INTEGER,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT DEFAULT 'unread',
+    read INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE,
+    FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_checks_resource_id ON checks(resource_id);
   CREATE INDEX IF NOT EXISTS idx_checks_checked_at ON checks(checked_at);
   CREATE INDEX IF NOT EXISTS idx_checks_resource_checked ON checks(resource_id, checked_at);
@@ -122,8 +137,34 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_alert_rules_resource ON alert_rules(resource_id);
   CREATE INDEX IF NOT EXISTS idx_transaction_checks_resource ON transaction_checks(resource_id);
   CREATE INDEX IF NOT EXISTS idx_archived_checks_resource_time ON archived_checks(resource_id, checked_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_notifications_read_status ON notifications(read, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_resource_tags_resource ON resource_tags(resource_id);
   CREATE INDEX IF NOT EXISTS idx_resource_tags_tag ON resource_tags(tag);
+
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT,
+    user_id TEXT DEFAULT 'system',
+    changes TEXT,
+    ip_address TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS error_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    error_message TEXT NOT NULL,
+    stack_trace TEXT,
+    context TEXT,
+    occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_error_logs_occurred ON error_logs(occurred_at DESC);
 `);
 
 // Lightweight migrations - for existing databases
@@ -141,10 +182,9 @@ try {
 
 try {
   db.prepare("ALTER TABLE resources ADD COLUMN maintenance_mode INTEGER DEFAULT 0").run();
-  console.log('[DB] Added maintenance_mode column to resources');
 } catch (err) {
   if (err.message.includes('duplicate')) {
-    console.log('[DB] maintenance_mode column already exists');
+    // Column already exists
   }
 }
 
@@ -174,12 +214,11 @@ try {
 
 try {
   db.prepare("ALTER TABLE resources ADD COLUMN email_to TEXT").run();
-  console.log('[DB] Added email_to column to resources');
 } catch (err) {
   if (err.message.includes('duplicate')) {
-    console.log('[DB] email_to column already exists');
+    // email_to column already exists
   } else {
-    console.error('[DB] Error adding email_to column:', err.message);
+    // Error adding email_to column
   }
 }
 
@@ -202,66 +241,67 @@ try {
 // New columns for features
 try {
   db.prepare("ALTER TABLE resources ADD COLUMN tags TEXT").run();
-  console.log('[DB] Added tags column to resources');
 } catch (err) {
   if (err.message.includes('duplicate')) {
-    console.log('[DB] tags column already exists');
+    // tags column already exists
   }
 }
 
 try {
   db.prepare("ALTER TABLE resources ADD COLUMN consecutive_failures_threshold INTEGER DEFAULT 1").run();
-  console.log('[DB] Added consecutive_failures_threshold column to resources');
 } catch (err) {
   if (err.message.includes('duplicate')) {
-    console.log('[DB] consecutive_failures_threshold column already exists');
+    // consecutive_failures_threshold column already exists
   }
 }
 
 try {
   db.prepare("ALTER TABLE resources ADD COLUMN response_time_threshold INTEGER").run();
-  console.log('[DB] Added response_time_threshold column to resources');
 } catch (err) {
   if (err.message.includes('duplicate')) {
-    console.log('[DB] response_time_threshold column already exists');
+    // response_time_threshold column already exists
   }
 }
 
 try {
   db.prepare("ALTER TABLE resources ADD COLUMN response_time_baseline INTEGER").run();
-  console.log('[DB] Added response_time_baseline column to resources');
 } catch (err) {
   if (err.message.includes('duplicate')) {
-    console.log('[DB] response_time_baseline column already exists');
+    // response_time_baseline column already exists
   }
 }
 
 try {
   db.prepare("ALTER TABLE resources ADD COLUMN is_transaction INTEGER DEFAULT 0").run();
-  console.log('[DB] Added is_transaction column to resources');
 } catch (err) {
   if (err.message.includes('duplicate')) {
-    console.log('[DB] is_transaction column already exists');
+    // is_transaction column already exists
+  }
+}
+
+try {
+  db.prepare("ALTER TABLE resources ADD COLUMN retention_days INTEGER DEFAULT NULL").run();
+} catch (err) {
+  if (err.message.includes('duplicate')) {
+    // retention_days column already exists
   }
 }
 
 // Add description column to incidents for incident summaries
 try {
   db.prepare("ALTER TABLE incidents ADD COLUMN description TEXT").run();
-  console.log('[DB] Added description column to incidents');
 } catch (err) {
   if (err.message.includes('duplicate')) {
-    console.log('[DB] description column already exists');
+    // description column already exists
   }
 }
 
 // Add failed_check_count to incidents to track consecutive failures at creation time
 try {
   db.prepare("ALTER TABLE incidents ADD COLUMN failed_check_count INTEGER DEFAULT 0").run();
-  console.log('[DB] Added failed_check_count column to incidents');
 } catch (err) {
   if (err.message.includes('duplicate')) {
-    console.log('[DB] failed_check_count column already exists');
+    // failed_check_count column already exists
   }
 }
 

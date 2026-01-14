@@ -9,7 +9,9 @@ A comprehensive monitoring system for tracking the uptime and performance of you
 - 🔔 **Alert Notifications** - Email and webhook alerts when resources go offline
 - 📝 **Incident Tracking** - Track when resources go down and recover
 - ⚙️ **Configurable Checks** - Set custom check intervals and timeouts
-- 🗄️ **Historical Data** - 7 days of check history with detailed statistics
+- 🗄️ **Historical Data** - Configurable data retention with per-resource overrides
+- 📊 **Observability Dashboard** - View metrics, errors, and audit logs with expandable changes
+- 🔐 **Data Retention Management** - Global settings + per-resource retention overrides
 
 ## Quick Start
 
@@ -50,6 +52,93 @@ The History page shows detailed check data with two viewing modes:
 - **Raw Mode** - Up to 600 individual checks for detailed analysis
 
 See [Usage Guide → History Page](docs/USAGE.md#history-page) for details.
+
+## Global Settings
+
+Configure default settings for your entire monitoring system in the **Settings Tab**:
+
+### 📧 Email Notifications
+- SMTP configuration with Gmail, Outlook, Yahoo, or custom providers
+- Test email functionality
+- Fallback support for failed notifications
+
+### 🔗 Webhook Notifications  
+- Send incident data to Slack, Discord, or custom webhooks
+- Test webhook functionality
+- Fallback webhook as backup
+
+### ⏱️ Default Monitoring Settings
+- **Check Interval** - How often to check resources (default: 60,000ms = 1 minute)
+- **Request Timeout** - Maximum time to wait for a response (default: 5,000ms)
+- **Data Retention** - How many days to keep check data (1-365 days, default: 30)
+- **Timezone** - Local timezone for all timestamps
+- **Consecutive Failures Threshold** - Number of failures before triggering alert (default: 3)
+- **Incident Failure Threshold** - Number of failures before creating incident (default: 10)
+- **Grace Period** - Wait time before alerting after first failure (default: 300s)
+- **Downtime Threshold** - Minimum downtime before creating incident (default: 600s)
+
+### 🔔 Alert Settings
+- **Alert Retry Logic** - How many times to retry failed alerts (default: 3)
+- **Retry Delay** - Wait time between retries (default: 60s)
+- **Fallback Webhook** - Backup webhook if primary notifications fail
+- **Global Quiet Hours** - Suppress non-critical alerts during specific times
+- **Escalation Hours** - Escalate unresolved incidents after this time (default: 4 hours)
+
+### 📊 Dashboard Settings
+- **Default Sort Order** - How to sort resources in dashboard
+- **Items Per Page** - Pagination size for resource lists (default: 20)
+- **Dashboard Refresh Interval** - How often to fetch fresh data (default: 5,000ms = 5 seconds)
+- **Auto Cleanup** - Automatically archive old check data based on retention period
+
+## Data Retention System
+
+SkyWatch supports **two-tier data retention**:
+
+### Global Retention (Default)
+Set in Settings → Default Monitoring Settings → "Global Data Retention"
+- Applies to all resources by default
+- Retained check data is archived after the specified number of days
+- Can be overridden per-resource
+
+### Per-Resource Retention (Override)
+Set when creating or editing a resource:
+- Leave blank to use global setting
+- Enter a specific number (1-365) to override global retention for that resource
+- Useful for critical services (longer retention) or dev environments (shorter retention)
+
+Example:
+- Global retention: 30 days
+- Production API: 90 days (critical data)
+- Dev server: 7 days (less important)
+
+### How Archival Works
+The scheduler runs daily at 2 AM to:
+1. Check each resource for its retention setting (per-resource or global)
+2. Move old checks to `archived_checks` table
+3. Delete from active `checks` table
+
+## Observability Dashboard
+
+View detailed system observability data in the **Observability Tab**:
+
+### 📊 Metrics
+- API request counts and success rates
+- Response time statistics
+- Error counts by endpoint
+- Performance trends
+
+### ❌ Errors
+- Recent errors with stack traces
+- Error frequency and patterns
+- Detailed error context
+
+### 📋 Audit Logs
+- Complete change history of all resources, settings, and groups
+- Filter by entity type, ID, user, or action
+- **Expandable Changes** - Click "▶ Show Changes" to see full JSON of what changed
+  - Shows old values and new values
+  - Helps track configuration changes over time
+  - Click "▼ Hide" to collapse
 
 ## API Endpoints
 

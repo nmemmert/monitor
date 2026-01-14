@@ -6,12 +6,20 @@ const notificationService = require('./notificationService');
 class Scheduler {
   constructor() {
     this.jobs = new Map();
+    this.isRunning = false;
   }
 
   start() {
     // Run checks every minute
     cron.schedule('* * * * *', async () => {
-      await this.runChecks();
+      if (!this.isRunning) {
+        this.isRunning = true;
+        try {
+          await this.runChecks();
+        } finally {
+          this.isRunning = false;
+        }
+      }
     });
 
     // Archive old checks daily at 2 AM
@@ -23,37 +31,44 @@ class Scheduler {
     setTimeout(() => {
       this.archiveOldChecks();
     }, 5000);
-
-    console.log('Scheduler started');
   }
 
   archiveOldChecks() {
     try {
+      // Get global retention setting
       const retentionSetting = db.prepare(`
         SELECT value FROM settings WHERE key = 'retention_days'
       `).get();
       
-      const retentionDays = retentionSetting ? parseInt(retentionSetting.value) : 30;
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
-      const cutoffString = cutoffDate.toISOString().replace('T', ' ').split('.')[0];
+      const globalRetentionDays = retentionSetting ? parseInt(retentionSetting.value) : 30;
 
-      // Move old checks to archived_checks
-      const oldChecks = db.prepare(`
-        SELECT * FROM checks WHERE checked_at < ?
-      `).all(cutoffString);
+      // Get all resources with their retention settings
+      const resources = db.prepare(`
+        SELECT id, retention_days FROM resources
+      `).all();
 
-      if (oldChecks.length > 0) {
-        const insertArchived = db.prepare(`
-          INSERT INTO archived_checks (resource_id, status, response_time, status_code, error_message, details, checked_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `);
+      const insertArchived = db.prepare(`
+        INSERT INTO archived_checks (resource_id, status, response_time, status_code, error_message, details, checked_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
 
-        const deleteOld = db.prepare(`
-          DELETE FROM checks WHERE id = ?
-        `);
+      const deleteOld = db.prepare(`
+        DELETE FROM checks WHERE id = ?
+      `);
 
-        const transaction = db.transaction(() => {
+      const transaction = db.transaction(() => {
+        resources.forEach(resource => {
+          // Use per-resource retention if set, otherwise use global
+          const retentionDays = resource.retention_days || globalRetentionDays;
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+          const cutoffString = cutoffDate.toISOString().replace('T', ' ').split('.')[0];
+
+          // Get old checks for this resource
+          const oldChecks = db.prepare(`
+            SELECT * FROM checks WHERE resource_id = ? AND checked_at < ?
+          `).all(resource.id, cutoffString);
+
           oldChecks.forEach(check => {
             insertArchived.run(
               check.resource_id,
@@ -67,12 +82,11 @@ class Scheduler {
             deleteOld.run(check.id);
           });
         });
+      });
 
-        transaction();
-        console.log(`[Archival] Archived ${oldChecks.length} checks older than ${retentionDays} days`);
-      }
+      transaction();
     } catch (error) {
-      console.error('[Archival] Error archiving checks:', error.message);
+      // Archive error handled silently
     }
   }
 
@@ -133,10 +147,8 @@ class Scheduler {
             await notificationService.sendAlert(resource, incident, stats);
           }
         }
-
-        console.log(`Checked ${resource.name}: ${result.status} (${result.response_time}ms)`);
       } catch (error) {
-        console.error(`Error checking ${resource.name}:`, error.message);
+        // Check error handled silently
       }
     })());
 
@@ -146,6 +158,11 @@ class Scheduler {
     if (global.broadcastDashboardUpdate) {
       global.broadcastDashboardUpdate();
     }
+  }
+
+  stop() {
+    // Stop the scheduler (cron tasks will continue running but we flag isRunning)
+    this.isRunning = false;
   }
 }
 

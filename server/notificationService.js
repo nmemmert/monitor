@@ -44,6 +44,8 @@ class NotificationService {
           user: config.email_user,
           pass: config.email_pass,
         },
+        connectionTimeout: 10000,
+        socketTimeout: 10000,
       });
     } else {
       this.transporter = null;
@@ -99,6 +101,47 @@ class NotificationService {
     }
 
     await Promise.allSettled(promises);
+
+    // Save notification to in-app notification center
+    const status = isDown ? 'down' : 'up';
+    this.saveNotification(resource, incident, status, message);
+  }
+
+  saveNotification(resource, incident, status, message) {
+    try {
+      const db = require('./database');
+      const title = status === 'down' ? 
+        `🔴 ${resource.name} is DOWN` : 
+        `🟢 ${resource.name} is UP`;
+      
+      const result = db.prepare(`
+        INSERT INTO notifications (resource_id, incident_id, type, title, message, read)
+        VALUES (?, ?, ?, ?, ?, 0)
+      `).run(
+        resource.id,
+        incident.id || null,
+        status,
+        title,
+        message
+      );
+
+      // Broadcast new notification to WebSocket clients in real-time
+      if (global.broadcastNotification) {
+        global.broadcastNotification({
+          id: result.lastInsertRowid,
+          resource_id: resource.id,
+          resource_name: resource.name,
+          incident_id: incident.id || null,
+          type: status,
+          title,
+          message,
+          read: 0,
+          created_at: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('Failed to save notification:', error.message);
+    }
   }
 
   isQuietHours(resource) {
@@ -125,7 +168,6 @@ class NotificationService {
 
   async sendEmail(resource, message, type, stats = null, emailOverride = null) {
     if (!this.transporter) {
-      console.error(`[Email] Config incomplete; skipping email (enabled=${this.emailEnabled}, host=${this.config.email_host})`);
       return;
     }
 
@@ -187,7 +229,7 @@ class NotificationService {
           : [],
       });
     } catch (error) {
-      console.error('Email error:', error.message);
+      // Email error handled
     }
   }
 
@@ -234,7 +276,6 @@ class NotificationService {
       
       return !!window;
     } catch (error) {
-      console.error('Error checking maintenance window:', error.message);
       return false;
     }
   }
@@ -249,7 +290,7 @@ class NotificationService {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('Webhook error:', error.message);
+      // Webhook error handled silently
     }
   }
 }

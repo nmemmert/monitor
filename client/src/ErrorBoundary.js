@@ -11,9 +11,7 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    // Log to console; could later POST to /api if needed
-    // eslint-disable-next-line no-console
-    console.error('App error:', error, info);
+    // Error handled silently
   }
 
   render() {

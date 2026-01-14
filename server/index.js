@@ -10,6 +10,33 @@ const scheduler = require('./scheduler');
 const monitorService = require('./monitorService');
 const notificationService = require('./notificationService');
 const cache = require('./cache');
+const security = require('./securityMiddleware');
+const metrics = require('./metrics');
+const auditLog = require('./auditLog');
+
+// Initialize notifications table if it doesn't exist
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      resource_id INTEGER,
+      incident_id INTEGER,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT DEFAULT 'unread',
+      read INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE,
+      FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notifications_read_status ON notifications(read, created_at DESC);
+  `);
+} catch (error) {
+  console.error('Error initializing notifications table:', error);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -81,6 +108,44 @@ function getTimezoneOffset() {
 app.use(cors());
 app.use(express.json());
 
+// Metrics tracking middleware
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  
+  // Capture original res.json and res.send
+  const originalJson = res.json.bind(res);
+  const originalSend = res.send.bind(res);
+  
+  const trackRequest = () => {
+    const duration = Date.now() - startTime;
+    const endpoint = req.route?.path || req.path;
+    metrics.trackApiRequest(endpoint, req.method, res.statusCode, duration);
+  };
+  
+  res.json = function(data) {
+    trackRequest();
+    return originalJson(data);
+  };
+  
+  res.send = function(data) {
+    trackRequest();
+    return originalSend(data);
+  };
+  
+  next();
+});
+
+// Error tracking middleware
+app.use((err, req, res, next) => {
+  metrics.trackError(err, {
+    method: req.method,
+    url: req.url,
+    ip: req.ip
+  });
+  
+  res.status(500).json({ error: 'Internal server error' });
+});
+
 // API Routes
 
 // Get all groups
@@ -139,16 +204,37 @@ app.get('/api/resources/:id', (req, res) => {
 
 // Create resource
 app.post('/api/resources', (req, res) => {
-  const { name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode } = req.body;
+  const { name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days } = req.body;
 
   if (!name || !url) {
     return res.status(400).json({ error: 'Name and URL are required' });
   }
 
+  // Validate URL format
+  try {
+    new URL(url);
+  } catch (e) {
+    return res.status(400).json({ error: 'Invalid URL format' });
+  }
+
+  // Validate numeric fields
+  if (check_interval && (isNaN(check_interval) || check_interval < 10000)) {
+    return res.status(400).json({ error: 'Check interval must be at least 10000ms' });
+  }
+  if (timeout && (isNaN(timeout) || timeout < 1000)) {
+    return res.status(400).json({ error: 'Timeout must be at least 1000ms' });
+  }
+  if (sla_target && (isNaN(sla_target) || sla_target < 0 || sla_target > 100)) {
+    return res.status(400).json({ error: 'SLA target must be between 0 and 100' });
+  }
+  if (retention_days && (isNaN(retention_days) || retention_days < 1 || retention_days > 365)) {
+    return res.status(400).json({ error: 'Retention days must be between 1 and 365' });
+  }
+
   try {
     const stmt = db.prepare(`
-      INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -165,16 +251,19 @@ app.post('/api/resources', (req, res) => {
       cert_expiry_days || 30,
       sla_target || 99.9,
       email_to || null,
-      maintenance_mode ? 1 : 0
+      maintenance_mode ? 1 : 0,
+      retention_days || null
     );
 
     // Invalidate related cache entries
     cache.invalidatePattern('history:');
     cache.invalidatePattern('sla:');
 
+    // Audit log
+    auditLog.logResourceChange('create', result.lastInsertRowid, { name, url, type, enabled: true }, 'system', req.ip);
+
     res.json({ id: result.lastInsertRowid, message: 'Resource created' });
   } catch (err) {
-    console.error('[API] Error creating resource:', err.message);
     // Helpful hint if migration missing
     const hint = err.message.includes('no column named maintenance_mode')
       ? 'Database schema missing maintenance_mode. Restart server to run migrations.'
@@ -185,11 +274,11 @@ app.post('/api/resources', (req, res) => {
 
 // Update resource
 app.put('/api/resources/:id', (req, res) => {
-  const { name, url, type, check_interval, timeout, enabled, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode } = req.body;
+  const { name, url, type, check_interval, timeout, enabled, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days } = req.body;
 
   const stmt = db.prepare(`
     UPDATE resources 
-    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?, http_keyword = ?, http_headers = ?, quiet_hours_start = ?, quiet_hours_end = ?, cert_expiry_days = ?, sla_target = ?, email_to = ?, maintenance_mode = ?
+    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?, http_keyword = ?, http_headers = ?, quiet_hours_start = ?, quiet_hours_end = ?, cert_expiry_days = ?, sla_target = ?, email_to = ?, maintenance_mode = ?, retention_days = ?
     WHERE id = ?
   `);
 
@@ -209,6 +298,7 @@ app.put('/api/resources/:id', (req, res) => {
     sla_target || 99.9,
     email_to || null,
     maintenance_mode ? 1 : 0,
+    retention_days || null,
     req.params.id
   );
 
@@ -257,11 +347,18 @@ app.patch('/api/resources/:id/group', (req, res) => {
 
 // Delete resource
 app.delete('/api/resources/:id', (req, res) => {
+  const resource = db.prepare('SELECT name, url FROM resources WHERE id = ?').get(req.params.id);
+  
   db.prepare('DELETE FROM resources WHERE id = ?').run(req.params.id);
   
   // Invalidate related cache entries
   cache.invalidatePattern('history:');
   cache.invalidatePattern('sla:');
+  
+  // Audit log
+  if (resource) {
+    auditLog.logResourceChange('delete', req.params.id, { name: resource.name, url: resource.url }, 'system', req.ip);
+  }
   
   res.json({ message: 'Resource deleted' });
 });
@@ -339,6 +436,84 @@ app.get('/api/incidents', (req, res) => {
   res.json({ incidents });
 });
 
+// Get notifications (in-app notification center)
+app.get('/api/notifications', (req, res) => {
+  const limit = parseInt(req.query.limit) || 50;
+  const offset = parseInt(req.query.offset) || 0;
+  const read = req.query.read; // undefined = all, 'unread' = only unread, 'read' = only read
+
+  let whereClause = '';
+  let whereClauseCount = '';
+  if (read === 'unread') {
+    whereClause = 'WHERE n.read = 0';
+    whereClauseCount = 'WHERE read = 0';
+  } else if (read === 'read') {
+    whereClause = 'WHERE n.read = 1';
+    whereClauseCount = 'WHERE read = 1';
+  }
+
+  const notifications = db.prepare(`
+    SELECT 
+      n.id,
+      n.resource_id,
+      n.incident_id,
+      n.type,
+      n.title,
+      n.message,
+      n.read,
+      n.created_at,
+      r.name as resource_name,
+      i.started_at as incident_started_at
+    FROM notifications n
+    LEFT JOIN resources r ON n.resource_id = r.id
+    LEFT JOIN incidents i ON n.incident_id = i.id
+    ${whereClause}
+    ORDER BY n.created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(limit, offset);
+
+  const total = db.prepare(`
+    SELECT COUNT(*) as count FROM notifications ${whereClauseCount}
+  `).get().count;
+
+  const unreadCount = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE read = 0').get().count;
+
+  res.json({ notifications, total, unreadCount });
+});
+
+// Get unread notification count
+app.get('/api/notifications/unread/count', (req, res) => {
+  const count = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE read = 0').get().count;
+  res.json({ unreadCount: count });
+});
+
+// Mark notification as read
+app.put('/api/notifications/:id/read', (req, res) => {
+  db.prepare('UPDATE notifications SET read = 1 WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Delete notification
+app.delete('/api/notifications/:id', (req, res) => {
+  db.prepare('DELETE FROM notifications WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Clear all notifications
+app.post('/api/notifications/clear', (req, res) => {
+  const type = req.body.type; // 'all', 'read', 'unread'
+  
+  if (type === 'all') {
+    db.prepare('DELETE FROM notifications').run();
+  } else if (type === 'read') {
+    db.prepare('DELETE FROM notifications WHERE read = 1').run();
+  } else if (type === 'unread') {
+    db.prepare('DELETE FROM notifications WHERE read = 0').run();
+  }
+  
+  res.json({ success: true });
+});
+
 // Get settings
 app.get('/api/settings', (req, res) => {
   const settings = {
@@ -414,8 +589,43 @@ app.post('/api/settings', (req, res) => {
     theme,
   } = req.body;
 
-  const envContent = `PORT=${process.env.PORT || 3001}
-EMAIL_ENABLED=${email_enabled}
+  // Validate email configuration if enabled
+  if (email_enabled) {
+    if (!email_host || !email_port || !email_user || !email_pass) {
+      return res.status(400).json({ error: 'Email configuration incomplete. All fields required when enabled.' });
+    }
+    if (isNaN(email_port) || email_port < 1 || email_port > 65535) {
+      return res.status(400).json({ error: 'Invalid email port number' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email_from)) {
+      return res.status(400).json({ error: 'Invalid email_from address' });
+    }
+  }
+
+  // Validate webhook configuration if enabled
+  if (webhook_enabled) {
+    if (!webhook_url) {
+      return res.status(400).json({ error: 'Webhook URL required when enabled' });
+    }
+    try {
+      new URL(webhook_url);
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid webhook URL format' });
+    }
+  }
+
+  // Validate numeric configuration
+  if (retention_days && (isNaN(retention_days) || retention_days < 1)) {
+    return res.status(400).json({ error: 'Retention days must be at least 1' });
+  }
+  if (check_interval && (isNaN(check_interval) || check_interval < 10000)) {
+    return res.status(400).json({ error: 'Check interval must be at least 10000ms' });
+  }
+  if (timeout && (isNaN(timeout) || timeout < 1000)) {
+    return res.status(400).json({ error: 'Timeout must be at least 1000ms' });
+  }
+
+  const envContent = `EMAIL_ENABLED=${email_enabled}
 EMAIL_HOST=${email_host}
 EMAIL_PORT=${email_port}
 EMAIL_USER=${email_user}
@@ -490,7 +700,6 @@ THEME=${theme || 'light'}
 
     res.json({ message: 'Settings saved successfully' });
   } catch (error) {
-    console.error('Error saving settings:', error);
     res.status(500).json({ error: 'Failed to save settings' });
   }
 });
@@ -506,7 +715,6 @@ app.get('/api/settings/retention', (req, res) => {
       retention_days: setting ? parseInt(setting.value) : 30 
     });
   } catch (error) {
-    console.error('Error getting retention settings:', error);
     res.status(500).json({ error: 'Failed to get retention settings' });
   }
 });
@@ -527,7 +735,6 @@ app.post('/api/settings/retention', (req, res) => {
     
     res.json({ message: 'Retention settings updated', retention_days });
   } catch (error) {
-    console.error('Error updating retention settings:', error);
     res.status(500).json({ error: 'Failed to update retention settings' });
   }
 });
@@ -559,6 +766,123 @@ app.post('/api/settings/incident-threshold', (req, res) => {
     res.json({ message: 'Incident threshold updated', incident_failure_threshold });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update incident threshold' });
+  }
+});
+
+// CSRF token generation endpoint
+app.get('/api/auth/csrf-token', (req, res) => {
+  try {
+    const csrfToken = security.generateCSRFToken();
+    res.json({ csrfToken });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate CSRF token' });
+  }
+});
+
+// JWT token refresh endpoint
+app.post('/api/auth/refresh-token', (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    
+    if (!refreshToken) {
+      return res.status(400).json({ error: 'Refresh token required' });
+    }
+
+    // Verify the refresh token
+    const decoded = security.verifyRefreshToken(refreshToken);
+    
+    if (!decoded) {
+      return res.status(401).json({ error: 'Invalid refresh token' });
+    }
+
+    // Generate new access and refresh tokens
+    const newAccessToken = security.generateToken({ userId: decoded.userId, username: decoded.username });
+    const newRefreshToken = security.generateRefreshToken({ userId: decoded.userId, username: decoded.username });
+
+    res.json({ 
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      expiresIn: 3600 // 1 hour
+    });
+  } catch (error) {
+    res.status(401).json({ error: 'Token refresh failed' });
+  }
+});
+
+// Password validation endpoint (for frontend to check strength)
+app.post('/api/auth/validate-password', (req, res) => {
+  try {
+    const { password } = req.body;
+    
+    if (!password) {
+      return res.status(400).json({ error: 'Password required' });
+    }
+
+    const validation = security.validatePasswordStrength(password);
+    res.json(validation);
+  } catch (error) {
+    res.status(500).json({ error: 'Password validation failed' });
+  }
+});
+
+// Observability & Monitoring Endpoints
+
+// Get application metrics
+app.get('/api/observability/metrics', (req, res) => {
+  try {
+    const metricsData = metrics.getMetrics();
+    res.json(metricsData);
+  } catch (error) {
+    metrics.trackError(error, { endpoint: '/api/observability/metrics' });
+    res.status(500).json({ error: 'Failed to retrieve metrics' });
+  }
+});
+
+// Get recent errors
+app.get('/api/observability/errors', (req, res) => {
+  try {
+    const { limit = 50 } = req.query;
+    const errors = metrics.getRecentErrors(parseInt(limit));
+    res.json({ errors });
+  } catch (error) {
+    metrics.trackError(error, { endpoint: '/api/observability/errors' });
+    res.status(500).json({ error: 'Failed to retrieve errors' });
+  }
+});
+
+// Get audit logs
+app.get('/api/observability/audit-logs', (req, res) => {
+  try {
+    const filters = {
+      entityType: req.query.entityType,
+      entityId: req.query.entityId,
+      userId: req.query.userId,
+      action: req.query.action,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      limit: parseInt(req.query.limit || 100),
+      offset: parseInt(req.query.offset || 0)
+    };
+    
+    const logs = auditLog.getAuditLogs(filters);
+    const summary = auditLog.getSummary(parseInt(req.query.days || 7));
+    
+    res.json({ logs, summary });
+  } catch (error) {
+    metrics.trackError(error, { endpoint: '/api/observability/audit-logs' });
+    res.status(500).json({ error: 'Failed to retrieve audit logs' });
+  }
+});
+
+// Get audit log summary
+app.get('/api/observability/audit-summary', (req, res) => {
+  try {
+    const { days = 7 } = req.query;
+    const summary = auditLog.getSummary(parseInt(days));
+    res.json(summary);
+  } catch (error) {
+    metrics.trackError(error, { endpoint: '/api/observability/audit-summary' });
+    res.status(500).json({ error: 'Failed to retrieve audit summary' });
   }
 });
 
@@ -607,7 +931,6 @@ app.get('/api/resources/:id/archived', (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching archived checks:', error);
     res.status(500).json({ error: 'Failed to fetch archived checks' });
   }
 });
@@ -791,7 +1114,6 @@ app.get('/api/resources/:id/trends', (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching trends:', error);
     res.status(500).json({ error: 'Failed to fetch trends' });
   }
 });
@@ -804,8 +1126,15 @@ app.get('/api/history/overview', (req, res) => {
   const currentPage = Math.max(1, parseInt(pageParam || page || 1));
   const offset = (currentPage - 1) * pageLimit;
 
+  // Get retention setting and enforce limit
+  const retentionSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('retention_days');
+  const maxDays = retentionSetting ? parseInt(retentionSetting.value) : 30;
+  const requestedDays = parseInt(days);
+  const effectiveDays = Math.min(requestedDays, maxDays);
+  const limitedByRetention = effectiveDays < requestedDays;
+
   // Create cache key based on query parameters
-  const cacheKey = `history:days=${days}:page=${currentPage}:limit=${pageLimit}:averaged=${averaged}`;
+  const cacheKey = `history:days=${effectiveDays}:page=${currentPage}:limit=${pageLimit}:averaged=${averaged}`;
   
   // Check cache first
   const cachedResult = cache.get(cacheKey);
@@ -832,7 +1161,7 @@ app.get('/api/history/overview', (req, res) => {
         MAX(response_time) as max_response
       FROM checks
       WHERE resource_id = ? AND checked_at > datetime('now', ?)
-    `).get(resource.id, `-${days} days`);
+    `).get(resource.id, `-${effectiveDays} days`);
 
     const uptime = stats.total > 0 ? (stats.up_count / stats.total * 100) : 0;
     const avgResponseTime = stats.avg_response || 0;
@@ -842,7 +1171,7 @@ app.get('/api/history/overview', (req, res) => {
     
     if (isAveraged) {
       // Compute interval hours for bucketing (1h for 7 days, 3h for 14, 6h for 30+)
-      const intervalHours = days <= 7 ? 1 : days <= 14 ? 3 : 6;
+      const intervalHours = effectiveDays <= 7 ? 1 : effectiveDays <= 14 ? 3 : 6;
       
       // Use a reliable bucketing approach with Julian Day Numbers
       // Convert to julian day, multiply by 24 for hours, divide by intervalHours and round
@@ -858,7 +1187,7 @@ app.get('/api/history/overview', (req, res) => {
         WHERE resource_id = ? AND checked_at > datetime('now', ?)
         GROUP BY ${bucketExpr}
         ORDER BY checked_at ASC
-      `).all(resource.id, `-${days} days`).map(row => ({
+      `).all(resource.id, `-${effectiveDays} days`).map(row => ({
         status: row.up_count >= Math.ceil(row.total_count/2) ? 'up' : 'down',
         response_time: Math.round(row.avg_up_response || 0),
         checked_at: row.checked_at,
@@ -871,7 +1200,7 @@ app.get('/api/history/overview', (req, res) => {
         WHERE resource_id = ? AND checked_at > datetime('now', ?)
         ORDER BY checked_at DESC
         LIMIT 600
-      `).all(resource.id, `-${days} days`).reverse();
+      `).all(resource.id, `-${effectiveDays} days`).reverse();
     }
 
     return {
@@ -884,7 +1213,15 @@ app.get('/api/history/overview', (req, res) => {
     };
   });
 
-  const result = { resources: overview, total, page: currentPage, limit: pageLimit };
+  const result = { 
+    resources: overview, 
+    total, 
+    page: currentPage, 
+    limit: pageLimit,
+    effective_days: effectiveDays,
+    requested_days: requestedDays,
+    limited_by_retention: limitedByRetention
+  };
   
   // Cache result for 2 minutes (120 seconds)
   cache.set(cacheKey, result, 120);
@@ -1033,7 +1370,6 @@ app.post('/api/test-email', async (req, res) => {
 
     res.json({ message: 'Test email sent successfully! Check your inbox.' });
   } catch (error) {
-    console.error('Test email error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1054,7 +1390,6 @@ app.post('/api/test-webhook', async (req, res) => {
 
     res.json({ message: 'Test webhook sent successfully!' });
   } catch (error) {
-    console.error('Test webhook error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1123,7 +1458,6 @@ app.get('/api/resources/:id/maintenance-windows', (req, res) => {
     
     res.json({ windows });
   } catch (error) {
-    console.error('Error fetching maintenance windows:', error);
     res.status(500).json({ error: 'Failed to fetch maintenance windows' });
   }
 });
@@ -1150,7 +1484,6 @@ app.post('/api/resources/:id/maintenance-windows', (req, res) => {
       message: 'Maintenance window created' 
     });
   } catch (error) {
-    console.error('Error creating maintenance window:', error);
     res.status(500).json({ error: 'Failed to create maintenance window' });
   }
 });
@@ -1163,7 +1496,6 @@ app.delete('/api/maintenance-windows/:id', (req, res) => {
     db.prepare(`DELETE FROM maintenance_windows WHERE id = ?`).run(id);
     res.json({ message: 'Maintenance window deleted' });
   } catch (error) {
-    console.error('Error deleting maintenance window:', error);
     res.status(500).json({ error: 'Failed to delete maintenance window' });
   }
 });
@@ -1185,7 +1517,6 @@ app.get('/api/maintenance-windows', (req, res) => {
 
     res.json({ maintenanceWindows: windows });
   } catch (error) {
-    console.error('Error getting maintenance windows:', error);
     res.status(500).json({ error: 'Failed to get maintenance windows' });
   }
 });
@@ -1207,7 +1538,6 @@ app.get('/api/resources/:id/in-maintenance', (req, res) => {
       reason: window?.reason || null 
     });
   } catch (error) {
-    console.error('Error checking maintenance status:', error);
     res.status(500).json({ error: 'Failed to check maintenance status' });
   }
 });
@@ -1235,7 +1565,6 @@ app.post('/api/resources/:id/calculate-baseline', (req, res) => {
       message: `Baseline calculated: ${baseline}ms`
     });
   } catch (error) {
-    console.error('Error calculating baseline:', error);
     res.status(500).json({ error: 'Failed to calculate baseline' });
   }
 });
@@ -1258,7 +1587,6 @@ app.post('/api/resources/:id/alert-rules', (req, res) => {
 
     res.json({ message: 'Alert rules updated' });
   } catch (error) {
-    console.error('Error updating alert rules:', error);
     res.status(500).json({ error: 'Failed to update alert rules' });
   }
 });
@@ -1276,7 +1604,6 @@ app.get('/api/resources/:id/transaction-steps', (req, res) => {
 
     res.json({ steps });
   } catch (error) {
-    console.error('Error fetching transaction steps:', error);
     res.status(500).json({ error: 'Failed to fetch transaction steps' });
   }
 });
@@ -1309,7 +1636,6 @@ app.post('/api/resources/:id/transaction-steps', (req, res) => {
 
     res.json({ id: result.lastInsertRowid, message: 'Transaction step created' });
   } catch (error) {
-    console.error('Error creating transaction step:', error);
     res.status(500).json({ error: 'Failed to create transaction step' });
   }
 });
@@ -1322,7 +1648,6 @@ app.delete('/api/transaction-steps/:id', (req, res) => {
     db.prepare('DELETE FROM transaction_checks WHERE id = ?').run(id);
     res.json({ message: 'Transaction step deleted' });
   } catch (error) {
-    console.error('Error deleting transaction step:', error);
     res.status(500).json({ error: 'Failed to delete transaction step' });
   }
 });
@@ -1339,7 +1664,6 @@ app.post('/api/resources/:id/toggle-transaction', (req, res) => {
 
     res.json({ message: `Transaction mode ${enabled ? 'enabled' : 'disabled'}` });
   } catch (error) {
-    console.error('Error toggling transaction mode:', error);
     res.status(500).json({ error: 'Failed to toggle transaction mode' });
   }
 });
@@ -1378,8 +1702,99 @@ app.get('/api/resources/export', (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="resources-export.csv"');
     res.send(csv);
   } catch (error) {
-    console.error('Error exporting resources:', error);
     res.status(500).json({ error: 'Failed to export resources' });
+  }
+});
+
+// Export SLA report as CSV
+app.get('/api/sla/export', (req, res) => {
+  const { days = 30 } = req.query;
+  try {
+    const resources = db.prepare(`
+      SELECT r.*, 
+             COUNT(c.id) as total_checks,
+             SUM(CASE WHEN c.status = 'up' THEN 1 ELSE 0 END) as up_checks,
+             AVG(c.response_time) as avg_response_time,
+             COUNT(DISTINCT CASE WHEN i.id IS NOT NULL THEN i.id END) as incident_count,
+             COALESCE(SUM(CAST((julianday(COALESCE(i.resolved_at, datetime('now'))) - julianday(i.started_at)) * 24 * 60 AS INTEGER)), 0) as downtime_minutes
+      FROM resources r
+      LEFT JOIN checks c ON r.id = c.resource_id AND c.checked_at > datetime('now', '-' || ? || ' days')
+      LEFT JOIN incidents i ON r.id = i.resource_id AND i.started_at > datetime('now', '-' || ? || ' days')
+      GROUP BY r.id
+      ORDER BY r.name
+    `).all(days, days);
+
+    // CSV header
+    const headers = ['Resource Name', 'URL', 'Total Checks', 'Successful', 'Failed', 'Uptime %', 'Avg Response Time (ms)', 'Incidents', 'Downtime (minutes)'];
+    const csvRows = [headers.join(',')];
+
+    resources.forEach(resource => {
+      const uptime = resource.total_checks > 0 ? ((resource.up_checks / resource.total_checks) * 100).toFixed(2) : 0;
+      const failed = (resource.total_checks || 0) - (resource.up_checks || 0);
+      const row = [
+        `"${resource.name.replace(/"/g, '""')}"`,
+        `"${resource.url.replace(/"/g, '""')}"`,
+        resource.total_checks || 0,
+        resource.up_checks || 0,
+        failed,
+        uptime,
+        (resource.avg_response_time || 0).toFixed(0),
+        resource.incident_count || 0,
+        resource.downtime_minutes || 0
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const csv = csvRows.join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="sla-report-${days}d.csv"`);
+    res.send(csv);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to export SLA report' });
+  }
+});
+
+// Export incident history as CSV
+app.get('/api/incidents/export', (req, res) => {
+  const { days = 30 } = req.query;
+  try {
+    const incidents = db.prepare(`
+      SELECT i.*, r.name as resource_name, r.url
+      FROM incidents i
+      JOIN resources r ON i.resource_id = r.id
+      WHERE i.started_at > datetime('now', '-' || ? || ' days')
+      ORDER BY i.started_at DESC
+    `).all(days);
+
+    // CSV header
+    const headers = ['Resource', 'URL', 'Started At', 'Resolved At', 'Duration (minutes)', 'Incident Type', 'Error Message', 'Status'];
+    const csvRows = [headers.join(',')];
+
+    incidents.forEach(incident => {
+      const startTime = new Date(incident.started_at).getTime();
+      const endTime = incident.resolved_at ? new Date(incident.resolved_at).getTime() : Date.now();
+      const durationMinutes = Math.round((endTime - startTime) / 1000 / 60);
+      const status = incident.resolved_at ? 'Resolved' : 'Active';
+      
+      const row = [
+        `"${incident.resource_name.replace(/"/g, '""')}"`,
+        `"${incident.url.replace(/"/g, '""')}"`,
+        new Date(incident.started_at).toISOString(),
+        incident.resolved_at ? new Date(incident.resolved_at).toISOString() : '',
+        durationMinutes,
+        incident.type || 'outage',
+        `"${(incident.error_message || '').replace(/"/g, '""')}"`,
+        status
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const csv = csvRows.join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="incidents-export-${days}d.csv"`);
+    res.send(csv);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to export incidents' });
   }
 });
 
@@ -1432,6 +1847,40 @@ app.post('/api/resources/import', express.text({ type: 'text/csv' }), (req, res)
           continue;
         }
 
+        // Validate URL format
+        try {
+          new URL(row.url);
+        } catch (e) {
+          errors.push(`Row ${i + 1}: Invalid URL format`);
+          continue;
+        }
+
+        // Check for duplicates
+        const existing = db.prepare('SELECT id FROM resources WHERE url = ?').get(row.url);
+        if (existing) {
+          errors.push(`Row ${i + 1}: URL already exists`);
+          continue;
+        }
+
+        // Validate numeric fields
+        const checkInterval = parseInt(row.check_interval) || 60000;
+        if (checkInterval < 10000) {
+          errors.push(`Row ${i + 1}: Check interval must be at least 10000ms`);
+          continue;
+        }
+
+        const timeout = parseInt(row.timeout) || 5000;
+        if (timeout < 1000) {
+          errors.push(`Row ${i + 1}: Timeout must be at least 1000ms`);
+          continue;
+        }
+
+        const slaTarget = parseFloat(row.sla_target) || 99.9;
+        if (isNaN(slaTarget) || slaTarget < 0 || slaTarget > 100) {
+          errors.push(`Row ${i + 1}: SLA target must be between 0 and 100`);
+          continue;
+        }
+
         const stmt = db.prepare(`
           INSERT INTO resources (name, url, type, check_interval, timeout, sla_target, tags, group_id, email_to)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1441,9 +1890,9 @@ app.post('/api/resources/import', express.text({ type: 'text/csv' }), (req, res)
           row.name,
           row.url,
           row.type || 'http',
-          parseInt(row.check_interval) || 60000,
-          parseInt(row.timeout) || 5000,
-          parseFloat(row.sla_target) || 99.9,
+          checkInterval,
+          timeout,
+          slaTarget,
           row.tags || '',
           row.group_id ? parseInt(row.group_id) : null,
           row.email_to || ''
@@ -1460,7 +1909,6 @@ app.post('/api/resources/import', express.text({ type: 'text/csv' }), (req, res)
 
     res.json({ imported, errors, count: imported.length });
   } catch (error) {
-    console.error('Error importing resources:', error);
     res.status(500).json({ error: 'Failed to import resources' });
   }
 });
@@ -1547,19 +1995,165 @@ function broadcastDashboardUpdate() {
       }
     });
   } catch (error) {
-    console.error('Error broadcasting dashboard update:', error.message);
+    // Broadcast error handled silently
   }
 }
 
-// Export broadcast function for use in scheduler
+// Broadcast alert notification to WebSocket clients
+function broadcastAlert(alert) {
+  try {
+    const message = JSON.stringify({
+      type: 'alert',
+      data: alert
+    });
+
+    wsClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      } else {
+        wsClients.delete(client);
+      }
+    });
+  } catch (error) {
+    // Broadcast error handled silently
+  }
+}
+
+// Broadcast incident update to WebSocket clients
+function broadcastIncident(incident) {
+  try {
+    const message = JSON.stringify({
+      type: 'incident',
+      data: incident
+    });
+
+    wsClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      } else {
+        wsClients.delete(client);
+      }
+    });
+  } catch (error) {
+    // Broadcast error handled silently
+  }
+}
+
+// Broadcast metrics update to WebSocket clients
+function broadcastMetrics() {
+  try {
+    const metricsData = metrics.getMetrics();
+    const message = JSON.stringify({
+      type: 'metrics',
+      data: metricsData
+    });
+
+    wsClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      } else {
+        wsClients.delete(client);
+      }
+    });
+  } catch (error) {
+    // Broadcast error handled silently
+  }
+}
+
+// Export broadcast functions for use in scheduler and other modules
 global.broadcastDashboardUpdate = broadcastDashboardUpdate;
+global.broadcastAlert = broadcastAlert;
+global.broadcastIncident = broadcastIncident;
+global.broadcastMetrics = broadcastMetrics;
+
+// Broadcast new notification to all connected WebSocket clients
+function broadcastNotification(notification) {
+  const message = JSON.stringify({
+    type: 'notification',
+    data: notification
+  });
+  wsClients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+}
+
+// Export broadcast notification function
+global.broadcastNotification = broadcastNotification;
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  try {
+    const uptime = process.uptime();
+    const dbCheck = db.prepare('SELECT COUNT(*) as count FROM resources').get();
+    const schedulerStatus = scheduler.isRunning ? 'running' : 'stopped';
+    
+    res.json({
+      status: 'ok',
+      uptime: Math.floor(uptime),
+      uptimeFormatted: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`,
+      timestamp: new Date().toISOString(),
+      database: {
+        connected: !!dbCheck,
+        resourcesCount: dbCheck?.count || 0
+      },
+      scheduler: {
+        status: schedulerStatus,
+        isRunning: scheduler.isRunning
+      }
+    });
+  } catch (error) {
+    res.status(503).json({ 
+      status: 'error', 
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Graceful shutdown handlers
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  try {
+    // Close WebSocket connections
+    wsClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.close(1000, 'Server shutting down');
+      }
+    });
+    wsClients.clear();
+
+    // Stop scheduler
+    if (scheduler.isRunning) {
+      scheduler.stop();
+    }
+
+    // Close database
+    try {
+      db.close();
+    } catch (e) {
+      // Database already closed
+    }
+
+    process.exit(0);
+  } catch (error) {
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Start server with HTTP and WebSocket
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-  console.log('WebSocket client connected');
   wsClients.add(ws);
 
   // Send initial dashboard data
@@ -1572,23 +2166,19 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ type: 'pong' }));
       }
     } catch (error) {
-      console.error('Error handling WebSocket message:', error.message);
+      // Handle JSON parse errors silently
     }
   });
 
   ws.on('close', () => {
-    console.log('WebSocket client disconnected');
     wsClients.delete(ws);
   });
 
   ws.on('error', (error) => {
-    console.error('WebSocket error:', error.message);
     wsClients.delete(ws);
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`WebSocket available at ws://localhost:${PORT}`);
   scheduler.start();
 });

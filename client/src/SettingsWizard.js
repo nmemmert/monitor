@@ -30,7 +30,6 @@ function SettingsWizard() {
     default_sort: 'name',
     items_per_page: 20,
     refresh_interval: 5000,
-    theme: 'light',
     incident_failure_threshold: 10,
   });
 
@@ -48,7 +47,7 @@ function SettingsWizard() {
       const response = await axios.get('/api/settings');
       setSettings(response.data);
     } catch (error) {
-      console.error('Error loading settings:', error);
+      // Settings load error handled
     }
   };
 
@@ -62,7 +61,6 @@ function SettingsWizard() {
       // Clear message after 3 seconds
       setTimeout(() => setSavedMessage(null), 3000);
     } catch (error) {
-      console.error('Error saving settings:', error);
       setSavedMessage({ section: sectionName, success: false, error: error.response?.data?.error || 'Failed to save' });
       setTimeout(() => setSavedMessage(null), 5000);
     } finally {
@@ -115,6 +113,7 @@ function SettingsWizard() {
     { name: 'Gmail', host: 'smtp.gmail.com', port: 587 },
     { name: 'Outlook', host: 'smtp-mail.outlook.com', port: 587 },
     { name: 'Yahoo', host: 'smtp.mail.yahoo.com', port: 587 },
+    { name: 'iCloud', host: 'smtp.mail.me.com', port: 587 },
     { name: 'Custom', host: '', port: 587 },
   ];
 
@@ -365,6 +364,20 @@ function SettingsWizard() {
 
           <div className="form-row">
             <div className="form-group">
+              <label>Global Data Retention (days)</label>
+              <input
+                type="number"
+                value={settings.retention_days}
+                onChange={(e) => setSettings({ ...settings, retention_days: parseInt(e.target.value) })}
+                min="1"
+                max="365"
+              />
+              <small>Default retention period for all monitors (1-365 days). Individual monitors can override this.</small>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
               <label>Timezone</label>
               <select
                 value={settings.timezone}
@@ -392,6 +405,18 @@ function SettingsWizard() {
 
           <div className="form-row">
             <div className="form-group">
+              <label>Consecutive Failures Threshold</label>
+              <input
+                type="number"
+                value={settings.consecutive_failures || 3}
+                onChange={(e) => setSettings({ ...settings, consecutive_failures: parseInt(e.target.value) })}
+                min="1"
+                max="100"
+              />
+              <small>Number of consecutive failures before triggering an alert (default: 3)</small>
+            </div>
+
+            <div className="form-group">
               <label>Incident Failure Threshold</label>
               <input
                 type="number"
@@ -400,7 +425,33 @@ function SettingsWizard() {
                 min="1"
                 max="100"
               />
-              <small>Number of consecutive failed checks before automatically creating an incident (default: 10)</small>
+              <small>Number of failures before creating an incident (default: 10)</small>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Grace Period (seconds)</label>
+              <input
+                type="number"
+                value={settings.grace_period || 300}
+                onChange={(e) => setSettings({ ...settings, grace_period: parseInt(e.target.value) })}
+                min="0"
+                step="60"
+              />
+              <small>Wait time before alerting after first failure (default: 300s = 5 minutes)</small>
+            </div>
+
+            <div className="form-group">
+              <label>Downtime Threshold (seconds)</label>
+              <input
+                type="number"
+                value={settings.downtime_threshold || 600}
+                onChange={(e) => setSettings({ ...settings, downtime_threshold: parseInt(e.target.value) })}
+                min="0"
+                step="60"
+              />
+              <small>Minimum downtime before creating incident (default: 600s = 10 minutes)</small>
             </div>
           </div>
 
@@ -411,25 +462,183 @@ function SettingsWizard() {
               timeout: settings.timeout,
               timezone: settings.timezone,
               retention_days: settings.retention_days,
-              auto_cleanup_enabled: settings.auto_cleanup_enabled,
               consecutive_failures: settings.consecutive_failures,
               grace_period: settings.grace_period,
               downtime_threshold: settings.downtime_threshold,
+              incident_failure_threshold: settings.incident_failure_threshold,
+            })}
+            disabled={savingSection === 'Monitoring'}
+          >
+            {savingSection === 'Monitoring' ? 'Saving...' : '💾 Save Monitoring Settings'}
+          </button>
+        </div>
+      </div>
+
+      {/* Alert Settings */}
+      <div className="settings-section">
+        <h3>🔔 Alert Settings</h3>
+        <div className="settings-form">
+          <div className="form-row">
+            <div className="form-group">
+              <label>Alert Retry Count</label>
+              <input
+                type="number"
+                value={settings.alert_retry_count || 3}
+                onChange={(e) => setSettings({ ...settings, alert_retry_count: parseInt(e.target.value) })}
+                min="0"
+                max="10"
+              />
+              <small>Number of times to retry sending alert if it fails (default: 3)</small>
+            </div>
+
+            <div className="form-group">
+              <label>Alert Retry Delay (seconds)</label>
+              <input
+                type="number"
+                value={settings.alert_retry_delay || 60}
+                onChange={(e) => setSettings({ ...settings, alert_retry_delay: parseInt(e.target.value) })}
+                min="0"
+                step="30"
+              />
+              <small>Wait time between alert retries (default: 60s)</small>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Fallback Webhook URL (optional)</label>
+            <input
+              type="url"
+              value={settings.fallback_webhook || ''}
+              onChange={(e) => setSettings({ ...settings, fallback_webhook: e.target.value })}
+              placeholder="https://backup-webhook.example.com"
+            />
+            <small>Backup webhook to use if primary alert methods fail</small>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Global Quiet Hours Start</label>
+              <input
+                type="time"
+                value={settings.global_quiet_hours_start || ''}
+                onChange={(e) => setSettings({ ...settings, global_quiet_hours_start: e.target.value })}
+              />
+              <small>Suppress non-critical alerts starting at this time</small>
+            </div>
+
+            <div className="form-group">
+              <label>Global Quiet Hours End</label>
+              <input
+                type="time"
+                value={settings.global_quiet_hours_end || ''}
+                onChange={(e) => setSettings({ ...settings, global_quiet_hours_end: e.target.value })}
+              />
+              <small>Resume normal alerting at this time</small>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Escalation Hours</label>
+            <input
+              type="number"
+              value={settings.escalation_hours || 4}
+              onChange={(e) => setSettings({ ...settings, escalation_hours: parseInt(e.target.value) })}
+              min="1"
+              max="48"
+            />
+            <small>Hours after which unresolved incidents are escalated (default: 4)</small>
+          </div>
+
+          <button
+            className="btn btn-primary"
+            onClick={() => handleSaveSection('Alerts', {
               alert_retry_count: settings.alert_retry_count,
               alert_retry_delay: settings.alert_retry_delay,
               fallback_webhook: settings.fallback_webhook,
               global_quiet_hours_start: settings.global_quiet_hours_start,
               global_quiet_hours_end: settings.global_quiet_hours_end,
               escalation_hours: settings.escalation_hours,
+            })}
+            disabled={savingSection === 'Alerts'}
+          >
+            {savingSection === 'Alerts' ? 'Saving...' : '💾 Save Alert Settings'}
+          </button>
+        </div>
+      </div>
+
+      {/* Dashboard Settings */}
+      <div className="settings-section">
+        <h3>📊 Dashboard Settings</h3>
+        <div className="settings-form">
+          <div className="form-row">
+            <div className="form-group">
+              <label>Default Sort Order</label>
+              <select
+                value={settings.default_sort || 'name'}
+                onChange={(e) => setSettings({ ...settings, default_sort: e.target.value })}
+              >
+                <option value="name">Name</option>
+                <option value="status">Status</option>
+                <option value="created_at">Created Date</option>
+                <option value="group">Group</option>
+              </select>
+              <small>Default sorting for resources list</small>
+            </div>
+
+            <div className="form-group">
+              <label>Items Per Page</label>
+              <input
+                type="number"
+                value={settings.items_per_page || 20}
+                onChange={(e) => setSettings({ ...settings, items_per_page: parseInt(e.target.value) })}
+                min="10"
+                max="100"
+                step="10"
+              />
+              <small>Number of resources to display per page</small>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Dashboard Refresh Interval (ms)</label>
+              <input
+                type="number"
+                value={settings.refresh_interval || 5000}
+                onChange={(e) => setSettings({ ...settings, refresh_interval: parseInt(e.target.value) })}
+                min="1000"
+                step="1000"
+              />
+              <small>How often to refresh dashboard data (default: 5000ms = 5 seconds)</small>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="toggle-switch-row">
+              <span>Auto Cleanup Enabled</span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={settings.auto_cleanup_enabled || false}
+                  onChange={(e) => setSettings({ ...settings, auto_cleanup_enabled: e.target.checked })}
+                />
+                <span className="toggle-slider"></span>
+              </label>
+            </label>
+            <small>Automatically archive old check data based on retention period</small>
+          </div>
+
+          <button
+            className="btn btn-primary"
+            onClick={() => handleSaveSection('Dashboard', {
               default_sort: settings.default_sort,
               items_per_page: settings.items_per_page,
               refresh_interval: settings.refresh_interval,
-              theme: settings.theme,
-              incident_failure_threshold: settings.incident_failure_threshold,
+              auto_cleanup_enabled: settings.auto_cleanup_enabled,
             })}
-            disabled={savingSection === 'Monitoring'}
+            disabled={savingSection === 'Dashboard'}
           >
-            {savingSection === 'Monitoring' ? 'Saving...' : '💾 Save Monitoring Settings'}
+            {savingSection === 'Dashboard' ? 'Saving...' : '💾 Save Dashboard Settings'}
           </button>
         </div>
       </div>

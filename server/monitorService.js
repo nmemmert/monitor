@@ -7,6 +7,8 @@ const dns = require('dns').promises;
 const WebSocket = require('ws');
 const ping = require('ping');
 const db = require('./database');
+const RetryPolicy = require('./retryPolicy');
+const CircuitBreaker = require('./circuitBreaker');
 
 const DEFAULT_PORTS = {
   http: 80,
@@ -32,6 +34,33 @@ class MonitorService {
     // Keep-alive agents for pooled HTTP/S connections
     this.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 });
     this.httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 });
+    
+    // Circuit breaker for HTTP checks (5 failures before opening, 60s reset)
+    this.httpCircuitBreaker = new CircuitBreaker(5, 60000, this.isTransientError);
+    
+    // Retry policy: 3 retries with exponential backoff
+    this.retryPolicy = new RetryPolicy(3, 1000, 10000);
+    
+    // Circuit breakers per resource for fine-grained control
+    this.resourceCircuitBreakers = new Map();
+  }
+
+  getResourceCircuitBreaker(resourceId) {
+    if (!this.resourceCircuitBreakers.has(resourceId)) {
+      this.resourceCircuitBreakers.set(resourceId, new CircuitBreaker(3, 120000, this.isTransientError));
+    }
+    return this.resourceCircuitBreakers.get(resourceId);
+  }
+
+  isTransientError(error) {
+    // Only retry on transient errors (network, timeout, 5xx)
+    if (error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
+      return true;
+    }
+    if (error.response?.status >= 500) {
+      return true;
+    }
+    return false;
   }
   async checkResource(resource) {
     const startTime = Date.now();
@@ -77,49 +106,59 @@ class MonitorService {
 
   async checkHttp(resource, startTime, base) {
     let result = { ...base };
+    const circuitBreaker = this.getResourceCircuitBreaker(resource.id);
+    
     try {
-      const headers = {};
-      if (resource.http_headers) {
-        try {
-          const customHeaders = JSON.parse(resource.http_headers);
-          Object.assign(headers, customHeaders);
-        } catch (e) {
-          // Invalid JSON, skip custom headers
-        }
-      }
+      await circuitBreaker.execute(async () => {
+        return await this.retryPolicy.execute(async () => {
+          const headers = {};
+          if (resource.http_headers) {
+            try {
+              const customHeaders = JSON.parse(resource.http_headers);
+              Object.assign(headers, customHeaders);
+            } catch (e) {
+              // Invalid JSON, skip custom headers
+            }
+          }
 
-      const isHttps = resource.url.startsWith('https');
-      const response = await axios.get(resource.url, {
-        timeout: resource.timeout,
-        validateStatus: () => true,
-        maxRedirects: 5,
-        headers,
-        httpAgent: this.httpAgent,
-        httpsAgent: this.httpsAgent,
+          const isHttps = resource.url.startsWith('https');
+          const response = await axios.get(resource.url, {
+            timeout: resource.timeout,
+            validateStatus: () => true,
+            maxRedirects: 5,
+            headers,
+            httpAgent: this.httpAgent,
+            httpsAgent: this.httpsAgent,
+          });
+          const responseTime = Date.now() - startTime;
+          const isUp = response.status >= 200 && response.status < 400;
+          
+          // Check for keyword if specified
+          let keywordMatch = true;
+          if (resource.http_keyword && response.data) {
+            const dataStr = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+            keywordMatch = dataStr.includes(resource.http_keyword);
+            if (!keywordMatch) {
+              result.error_message = `Keyword "${resource.http_keyword}" not found in response`;
+            }
+          }
+
+          result = {
+            ...result,
+            status: (isUp && keywordMatch) ? 'up' : 'down',
+            response_time: responseTime,
+            status_code: response.status,
+            error_message: isUp && keywordMatch ? null : (result.error_message || `HTTP ${response.status}`),
+          };
+          
+          return result;
+        }, `HTTP check for ${resource.name}`);
       });
-      const responseTime = Date.now() - startTime;
-      const isUp = response.status >= 200 && response.status < 400;
-      
-      // Check for keyword if specified
-      let keywordMatch = true;
-      if (resource.http_keyword && response.data) {
-        const dataStr = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-        keywordMatch = dataStr.includes(resource.http_keyword);
-        if (!keywordMatch) {
-          result.error_message = `Keyword "${resource.http_keyword}" not found in response`;
-        }
-      }
-
-      result = {
-        ...result,
-        status: (isUp && keywordMatch) ? 'up' : 'down',
-        response_time: responseTime,
-        status_code: response.status,
-        error_message: isUp && keywordMatch ? null : (result.error_message || `HTTP ${response.status}`),
-      };
     } catch (error) {
-      result.error_message = error.message;
-      result.response_time = Date.now() - startTime;
+      const responseTime = Date.now() - startTime;
+      result.error_message = error.originalError?.message || error.message;
+      result.response_time = responseTime;
+      result.status = 'down';
     }
     return result;
   }
@@ -706,7 +745,6 @@ class MonitorService {
 
       return currentResponseTime > threshold;
     } catch (error) {
-      console.error('Error checking response time anomaly:', error.message);
       return false;
     }
   }
