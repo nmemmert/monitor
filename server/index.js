@@ -558,6 +558,7 @@ app.get('/api/settings', (req, res) => {
       items_per_page: parseInt(dbSettings.items_per_page || process.env.ITEMS_PER_PAGE) || 20,
       refresh_interval: parseInt(dbSettings.refresh_interval || process.env.REFRESH_INTERVAL) || 5000,
       theme: dbSettings.theme || process.env.THEME || 'light',
+      incident_failure_threshold: parseInt(dbSettings.incident_failure_threshold || process.env.INCIDENT_FAILURE_THRESHOLD) || 10,
     };
     res.json(settings);
   } catch (error) {
@@ -591,6 +592,7 @@ app.get('/api/settings', (req, res) => {
       items_per_page: parseInt(process.env.ITEMS_PER_PAGE) || 20,
       refresh_interval: parseInt(process.env.REFRESH_INTERVAL) || 5000,
       theme: process.env.THEME || 'light',
+      incident_failure_threshold: parseInt(process.env.INCIDENT_FAILURE_THRESHOLD) || 10,
     };
     res.json(settings);
   }
@@ -630,6 +632,7 @@ app.post('/api/settings', (req, res) => {
     items_per_page,
     refresh_interval,
     theme,
+    incident_failure_threshold,
   } = req.body;
 
   // Validate email configuration if enabled
@@ -695,6 +698,7 @@ DEFAULT_SORT=${default_sort || 'name'}
 ITEMS_PER_PAGE=${items_per_page || 20}
 REFRESH_INTERVAL=${refresh_interval || 5000}
 THEME=${theme || 'light'}
+INCIDENT_FAILURE_THRESHOLD=${incident_failure_threshold || 10}
 `;
 
   try {
@@ -728,6 +732,7 @@ THEME=${theme || 'light'}
     process.env.ITEMS_PER_PAGE = String(items_per_page || 20);
     process.env.REFRESH_INTERVAL = String(refresh_interval || 5000);
     process.env.THEME = theme || 'light';
+    process.env.INCIDENT_FAILURE_THRESHOLD = String(incident_failure_threshold || 10);
 
     // Also save to database for persistence
     const settingsTable = [
@@ -741,7 +746,23 @@ THEME=${theme || 'light'}
       { key: 'webhook_url', value: webhook_url },
       { key: 'timezone', value: timezone || 'UTC' },
       { key: 'retention_days', value: String(retention_days || 7) },
+      { key: 'check_interval', value: String(check_interval || 60000) },
+      { key: 'timeout', value: String(timeout || 5000) },
       { key: 'consecutive_failures', value: String(consecutive_failures || 3) },
+      { key: 'grace_period', value: String(grace_period || 300) },
+      { key: 'downtime_threshold', value: String(downtime_threshold || 600) },
+      { key: 'alert_retry_count', value: String(alert_retry_count || 3) },
+      { key: 'alert_retry_delay', value: String(alert_retry_delay || 60) },
+      { key: 'fallback_webhook', value: fallback_webhook || '' },
+      { key: 'global_quiet_hours_start', value: global_quiet_hours_start || '' },
+      { key: 'global_quiet_hours_end', value: global_quiet_hours_end || '' },
+      { key: 'escalation_hours', value: String(escalation_hours || 4) },
+      { key: 'default_sort', value: default_sort || 'name' },
+      { key: 'items_per_page', value: String(items_per_page || 20) },
+      { key: 'refresh_interval', value: String(refresh_interval || 5000) },
+      { key: 'auto_cleanup_enabled', value: String(auto_cleanup_enabled || false) },
+      { key: 'theme', value: theme || 'light' },
+      { key: 'incident_failure_threshold', value: String(incident_failure_threshold || 10) },
     ];
 
     for (const setting of settingsTable) {
