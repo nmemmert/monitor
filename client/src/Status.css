@@ -2,10 +2,6 @@
   max-width: 1200px;
   margin: 0 auto;
   padding: 2rem;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
-    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 .status-header {
@@ -13,19 +9,19 @@
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 2rem;
-  border-bottom: 2px solid #eee;
+  border-bottom: 1px solid #dbe2ea;
   padding-bottom: 1.5rem;
 }
 
 .status-header h1 {
   margin: 0 0 0.5rem 0;
-  font-size: 2.5rem;
-  color: #333;
+  font-size: 2.2rem;
+  color: #0f172a;
 }
 
 .status-subtitle {
   margin: 0;
-  color: #666;
+  color: #64748b;
   font-size: 1rem;
 }
 
@@ -48,7 +44,7 @@
 .last-updated {
   margin: 0;
   font-size: 0.85rem;
-  color: #666;
+  color: #64748b;
 }
 
 .status-summary {
@@ -59,12 +55,12 @@
 }
 
 .summary-card {
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #dbe2ea;
+  border-radius: 14px;
   padding: 1.5rem;
   text-align: center;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
 }
 
 .summary-value {
@@ -75,7 +71,7 @@
 
 .summary-label {
   font-size: 0.9rem;
-  color: #666;
+  color: #64748b;
   margin: 0;
 }
 
@@ -85,9 +81,9 @@
 
 .status-section h2 {
   font-size: 1.5rem;
-  color: #333;
+  color: #1e293b;
   margin: 0 0 1rem 0;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 1px solid #e5e7eb;
   padding-bottom: 0.5rem;
 }
 
@@ -98,30 +94,30 @@
 }
 
 .status-card {
-  border: 2px solid #ddd;
-  border-radius: 8px;
+  border: 1px solid #dbe2ea;
+  border-radius: 14px;
   padding: 1.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
   transition: all 0.2s ease;
 }
 
 .status-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
 }
 
 .status-card-up {
-  border-color: #4caf50;
-  background-color: #f1f8f6;
+  border-color: #86efac;
+  background: #f0fdf4;
 }
 
 .status-card-down {
-  border-color: #f44336;
-  background-color: #fdeaea;
+  border-color: #fca5a5;
+  background: #fef2f2;
 }
 
 .status-card-maintenance {
-  border-color: #ff9800;
-  background-color: #fff3e0;
+  border-color: #fcd34d;
+  background: #fffbeb;
 }
 
 .status-card-header {
@@ -134,7 +130,7 @@
 .status-card h3 {
   margin: 0;
   font-size: 1.2rem;
-  color: #333;
+  color: #0f172a;
   flex: 1;
 }
 
@@ -249,15 +245,15 @@
   width: 100%;
   border-collapse: collapse;
   background: white;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  border: 1px solid #dbe2ea;
+  border-radius: 12px;
   overflow: hidden;
 }
 
 .maintenance-table thead,
 .incidents-table thead {
-  background-color: #f5f5f5;
-  border-bottom: 2px solid #ddd;
+  background-color: #f1f5f9;
+  border-bottom: 2px solid #dbe2ea;
 }
 
 .maintenance-table th,
@@ -271,12 +267,12 @@
 .maintenance-table td,
 .incidents-table td {
   padding: 1rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .maintenance-table tr:hover,
 .incidents-table tr:hover {
-  background-color: #f9f9f9;
+  background-color: #f0f9ff;
 }
 
 .incident-desc-cell {

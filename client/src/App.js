@@ -29,8 +29,6 @@ function Dashboard() {
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState({});
-  const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
   const [notifications, setNotifications] = useState([]);
   const [formData, setFormData] = useState({
@@ -53,6 +51,7 @@ function Dashboard() {
     response_time_threshold: null,
   });
   const [tagFilter, setTagFilter] = useState('');
+  const [groupFilter, setGroupFilter] = useState('all');
   const [groupData, setGroupData] = useState({ name: '', description: '' });
   const wsRef = useRef(null);
   const actionsRef = useRef(null);
@@ -279,121 +278,114 @@ function Dashboard() {
     e.target.value = '';
   };
 
-  const toggleGroup = (groupId) => {
-    setCollapsedGroups(prev => ({
-      ...prev,
-      [groupId]: !prev[groupId]
-    }));
-  };
-
-  // Filter resources by tag
-  const filteredResources = tagFilter
-    ? resources.filter(r => {
-        const tags = (r.tags || '').toLowerCase();
-        return tags.includes(tagFilter.toLowerCase());
-      })
-    : resources;
-
-  const groupResourcesMap = filteredResources.reduce((acc, r) => {
-    const gid = r.group_id || 'ungrouped';
-    if (!acc[gid]) acc[gid] = [];
-    acc[gid].push(r);
+  const groupNameById = groups.reduce((acc, g) => {
+    acc[g.id] = g.name;
     return acc;
   }, {});
 
-  const getGroupStats = (groupResources) => {
-    if (!groupResources || groupResources.length === 0) return { uptime: 0, avgResponse: 0, total: 0 };
-    const uptime = (groupResources.reduce((sum, r) => sum + parseFloat(r.uptime || 0), 0) / groupResources.length).toFixed(2);
-    const avgResponse = (groupResources.reduce((sum, r) => sum + parseInt(r.avgResponseTime || 0), 0) / groupResources.length).toFixed(0);
-    return { uptime, avgResponse, total: groupResources.length };
-  };
+  // Filter resources by tag/group and sort for stable scanning
+  const filteredResources = resources
+    .filter((r) => {
+      if (tagFilter) {
+        const tags = (r.tags || '').toLowerCase();
+        if (!tags.includes(tagFilter.toLowerCase())) return false;
+      }
+      if (groupFilter === 'ungrouped') return !r.group_id;
+      if (groupFilter !== 'all') return String(r.group_id || '') === groupFilter;
+      return true;
+    })
+    .sort((a, b) => {
+      const groupA = (groupNameById[a.group_id] || 'Ungrouped').toLowerCase();
+      const groupB = (groupNameById[b.group_id] || 'Ungrouped').toLowerCase();
+      if (groupA < groupB) return -1;
+      if (groupA > groupB) return 1;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    });
 
-  const renderResourceCard = (resource) => {
+  const totalCount = filteredResources.length;
+  const upCount = filteredResources.filter((r) => r.status === 'up').length;
+  const downCount = filteredResources.filter((r) => r.status === 'down').length;
+  const maintenanceCount = filteredResources.filter((r) => r.maintenance_mode).length;
+  const avgUptime = totalCount
+    ? (filteredResources.reduce((sum, r) => sum + parseFloat(r.uptime || 0), 0) / totalCount).toFixed(2)
+    : '0.00';
+  const avgResponse = totalCount
+    ? Math.round(filteredResources.reduce((sum, r) => sum + parseInt(r.avgResponseTime || 0, 10), 0) / totalCount)
+    : 0;
+
+  const activeIncidents = filteredResources
+    .filter((r) => r.hasActiveIncident || r.status === 'down')
+    .slice(0, 8);
+
+  const groupCounts = groups
+    .map((g) => ({
+      id: g.id,
+      name: g.name,
+      count: filteredResources.filter((r) => String(r.group_id || '') === String(g.id)).length,
+    }))
+    .filter((g) => g.count > 0);
+
+  const ungroupedCount = filteredResources.filter((r) => !r.group_id).length;
+
+  const renderResourceRow = (resource) => {
     const sparkData = (resource.recentChecks || []).map((c, idx) => ({
       idx,
       responseTime: c.response_time || 0,
       statusValue: c.status === 'up' ? 1 : 0,
     }));
-
-    const isEditing = editingId === resource.id;
+    const groupName = groupNameById[resource.group_id] || 'Ungrouped';
 
     return (
       <div
         key={resource.id}
-        className="resource-card compact"
-        onClick={(e) => !isEditing && !e.target.closest('.card-actions') && navigate(`/resource/${resource.id}`)}
+        className="resource-row"
+        onClick={(e) => !e.target.closest('.row-actions') && navigate(`/resource/${resource.id}`)}
       >
-        <div className="resource-header">
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            {isEditing ? (
-              <input
-                type="text"
-                value={editData.name || resource.name}
-                onChange={(e) => setEditData({ ...editData, name: e.target.value })}
-                onClick={(e) => e.stopPropagation()}
-                className="edit-input"
-                placeholder="Resource name"
-              />
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <h3 className="resource-name" style={{ margin: 0 }}>{resource.name}</h3>
-                {resource.maintenance_mode && (
-                  <span title="Maintenance mode" style={{ fontSize: '0.95rem' }}>🛠️</span>
-                )}
-              </div>
-            )}
-            <p className="resource-url">{resource.url}</p>
-            <p className="resource-type">Type: {resource.type}</p>
+        <div className="row-main">
+          <div className="row-title-line">
+            <h3 className="resource-name row-name">{resource.name}</h3>
+            <span className="resource-group-pill">{groupName}</span>
+            {resource.hasActiveIncident && <span className="incident-inline">active incident</span>}
+            {resource.maintenance_mode && <span className="maintenance-inline">🛠 maintenance</span>}
           </div>
-          <span className={`status-badge status-${resource.status}`}>
-            {resource.status}
-          </span>
+          <p className="resource-url row-url">{resource.url}</p>
+          <p className="resource-type row-type">{resource.type}</p>
         </div>
 
-        {resource.hasActiveIncident && (
-          <div className="incident-badge">⚠️ Active Incident</div>
-        )}
-
-        <div className="resource-meta">
+        <div className="row-metrics">
           <div>
-            <p
-              className="stat-value small"
-              style={{ cursor: 'pointer', color: resource.maintenance_mode ? '#ffc107' : undefined }}
-              onClick={(e) => { e.stopPropagation(); if (!isEditing) setEditingId(resource.id); }}
-            >
-              {resource.uptime}%
-            </p>
-            <p className="stat-label">Uptime (24h)</p>
+            <p className="stat-value small">{resource.uptime}%</p>
+            <p className="stat-label">Uptime</p>
           </div>
           <div>
-            <p className="stat-value small" style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); if (!isEditing) setEditingId(resource.id); }}>
-              {resource.avgResponseTime}ms
-            </p>
+            <p className="stat-value small">{resource.avgResponseTime}ms</p>
             <p className="stat-label">Avg Resp</p>
           </div>
-          <div className="sparkline">
+          <div className="row-sparkline">
             {sparkData.length > 1 ? (
-              <ResponsiveContainer width="100%" height={50}>
-                <LineChart data={sparkData} margin={{ top: 4, bottom: 0, left: 0, right: 0 }}>
-                  <Line type="monotone" dataKey="responseTime" stroke="#667eea" strokeWidth={2} dot={false} />
+              <ResponsiveContainer width="100%" height={44}>
+                <LineChart data={sparkData} margin={{ top: 2, bottom: 0, left: 0, right: 0 }}>
+                  <Line type="monotone" dataKey="responseTime" stroke="#14b8a6" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <span style={{ fontSize: '0.75rem', color: '#999' }}>No recent data</span>
+              <span className="last-check">No recent data</span>
             )}
           </div>
         </div>
 
-        <div className="card-actions">
-          <button className="btn-icon" title="Edit" onClick={(e) => { e.stopPropagation(); openEditModal(resource); }}>✎</button>
-          <button className="btn-icon" title="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteResource(resource.id); }}>🗑</button>
-        </div>
-
-        {!isEditing && resource.lastCheck && (
+        <div className="row-side">
+          <span className={`status-badge status-${resource.status}`}>
+            {resource.status}
+          </span>
+          <div className="row-actions">
+            <button className="btn-icon" title="Edit" onClick={(e) => { e.stopPropagation(); openEditModal(resource); }}>✎</button>
+            <button className="btn-icon" title="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteResource(resource.id); }}>🗑</button>
+          </div>
           <p className="last-check">
-            Last: {formatLocalTime(resource.lastCheck)}
+            Last: {resource.lastCheck ? formatLocalTime(resource.lastCheck) : 'Never'}
           </p>
-        )}
+        </div>
       </div>
     );
   };
@@ -402,20 +394,11 @@ function Dashboard() {
     <div className="container">
       {/* Real-time Notifications */}
       {notifications.length > 0 && (
-        <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 9999 }}>
+        <div className="toast-stack">
           {notifications.map(notif => (
             <div
               key={notif.id}
-              style={{
-                marginBottom: '10px',
-                padding: '12px 16px',
-                borderRadius: '4px',
-                backgroundColor: notif.type === 'error' ? '#f8d7da' : notif.type === 'success' ? '#d4edda' : '#d1ecf1',
-                color: notif.type === 'error' ? '#721c24' : notif.type === 'success' ? '#155724' : '#0c5460',
-                border: `1px solid ${notif.type === 'error' ? '#f5c6cb' : notif.type === 'success' ? '#c3e6cb' : '#bee5eb'}`,
-                minWidth: '300px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-              }}
+              className={`toast-item toast-${notif.type}`}
             >
               <strong>{notif.title}</strong>
               <div>{notif.message}</div>
@@ -423,18 +406,32 @@ function Dashboard() {
           ))}
         </div>
       )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h2>SkyWatch Dashboard</h2>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="dashboard-toolbar">
+        <div>
+          <h2 className="dashboard-title">Command Center</h2>
+          <p className="dashboard-subtitle">Live operational view of all monitors</p>
+        </div>
+        <div className="dashboard-actions">
           <NotificationCenter />
           <input
             type="text"
             placeholder="Filter by tag"
             value={tagFilter}
             onChange={(e) => setTagFilter(e.target.value)}
-            style={{ padding: '0.5rem 0.75rem', borderRadius: '4px', border: '1px solid #ddd', minWidth: '160px' }}
+            className="tag-filter-input"
           />
-          <div ref={actionsRef} style={{ position: 'relative' }}>
+          <select
+            value={groupFilter}
+            onChange={(e) => setGroupFilter(e.target.value)}
+            className="tag-filter-input"
+          >
+            <option value="all">All groups</option>
+            {groups.map((g) => (
+              <option key={g.id} value={String(g.id)}>{g.name}</option>
+            ))}
+            <option value="ungrouped">Ungrouped</option>
+          </select>
+          <div ref={actionsRef} className="actions-menu-wrapper">
             <button
               className="btn btn-secondary"
               onClick={() => setActionsOpen((o) => !o)}
@@ -446,23 +443,11 @@ function Dashboard() {
             {actionsOpen && (
               <div
                 role="menu"
-                style={{
-                  position: 'absolute',
-                  right: 0,
-                  top: '110%',
-                  background: '#fff',
-                  border: '1px solid #ddd',
-                  borderRadius: '6px',
-                  boxShadow: '0 8px 20px rgba(0,0,0,0.12)',
-                  minWidth: '200px',
-                  padding: '0.25rem 0',
-                  zIndex: 20,
-                }}
+                className="actions-menu"
               >
                 <button
                   className="btn btn-ghost"
                   onClick={() => { setActionsOpen(false); setShowGroupModal(true); }}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.6rem 0.8rem' }}
                   role="menuitem"
                 >
                   + New Group
@@ -470,16 +455,14 @@ function Dashboard() {
                 <button
                   className="btn btn-ghost"
                   onClick={() => { setActionsOpen(false); setShowModal(true); }}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.6rem 0.8rem' }}
                   role="menuitem"
                 >
                   + Add Resource
                 </button>
-                <hr style={{ margin: '0.25rem 0', border: 0, borderTop: '1px solid #eee' }} />
+                <hr className="actions-menu-divider" />
                 <button
                   className="btn btn-ghost"
                   onClick={() => { setActionsOpen(false); handleExportCSV(); }}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.6rem 0.8rem' }}
                   role="menuitem"
                 >
                   ⬇ Export CSV
@@ -487,7 +470,6 @@ function Dashboard() {
                 <button
                   className="btn btn-ghost"
                   onClick={() => { setActionsOpen(false); document.getElementById('csv-import').click(); }}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.6rem 0.8rem' }}
                   role="menuitem"
                 >
                   ⬆ Import CSV
@@ -499,9 +481,36 @@ function Dashboard() {
             id="csv-import"
             type="file"
             accept=".csv"
-            style={{ display: 'none' }}
+            className="hidden-file-input"
             onChange={handleImportCSV}
           />
+        </div>
+      </div>
+
+      <div className="cc-metrics-grid">
+        <div className="cc-metric-card">
+          <p className="cc-metric-label">Monitors</p>
+          <p className="cc-metric-value">{totalCount}</p>
+        </div>
+        <div className="cc-metric-card metric-ok">
+          <p className="cc-metric-label">Up</p>
+          <p className="cc-metric-value">{upCount}</p>
+        </div>
+        <div className="cc-metric-card metric-down">
+          <p className="cc-metric-label">Down</p>
+          <p className="cc-metric-value">{downCount}</p>
+        </div>
+        <div className="cc-metric-card metric-maint">
+          <p className="cc-metric-label">Maintenance</p>
+          <p className="cc-metric-value">{maintenanceCount}</p>
+        </div>
+        <div className="cc-metric-card">
+          <p className="cc-metric-label">Avg Uptime</p>
+          <p className="cc-metric-value">{avgUptime}%</p>
+        </div>
+        <div className="cc-metric-card">
+          <p className="cc-metric-label">Avg Resp</p>
+          <p className="cc-metric-value">{avgResponse}ms</p>
         </div>
       </div>
 
@@ -513,51 +522,66 @@ function Dashboard() {
       ) : filteredResources.length === 0 ? (
         <div className="empty-state">
           <h3>No resources match filter</h3>
-          <p>Try adjusting your tag filter</p>
+          <p>Try adjusting your tag/group filters</p>
         </div>
       ) : (
-        <div>
-          {groups.map((group) => {
-            const groupStats = getGroupStats(groupResourcesMap[group.id]);
-            const isCollapsed = collapsedGroups[group.id];
-            return (
-              <div key={group.id} className="group-section">
-                <div className="group-header" onClick={() => toggleGroup(group.id)}>
-                  <span className="group-toggle">{isCollapsed ? '▶' : '▼'}</span>
-                  <h3 style={{ margin: 0, flex: 1 }}>{group.name}</h3>
-                  <div className="group-stats">
-                    <span className="group-stat">{groupStats.total} resources</span>
-                    <span className="group-stat">{groupStats.uptime}% up</span>
-                    <span className="group-stat">{groupStats.avgResponse}ms avg</span>
-                  </div>
-                </div>
-                {!isCollapsed && (
-                  <div className="dashboard-grid">
-                    {groupResourcesMap[group.id]?.map(renderResourceCard)}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {groupResourcesMap['ungrouped']?.length > 0 && (
-            <div className="group-section">
-              <div className="group-header" onClick={() => toggleGroup('ungrouped')}>
-                <span className="group-toggle">{collapsedGroups['ungrouped'] ? '▶' : '▼'}</span>
-                <h3 style={{ margin: 0, flex: 1 }}>Ungrouped</h3>
-                <div className="group-stats">
-                  <span className="group-stat">{groupResourcesMap['ungrouped'].length} resources</span>
-                  <span className="group-stat">{getGroupStats(groupResourcesMap['ungrouped']).uptime}% up</span>
-                  <span className="group-stat">{getGroupStats(groupResourcesMap['ungrouped']).avgResponse}ms avg</span>
-                </div>
-              </div>
-              {!collapsedGroups['ungrouped'] && (
-                <div className="dashboard-grid">
-                  {groupResourcesMap['ungrouped'].map(renderResourceCard)}
+        <div className="cc-layout">
+          <section className="resource-list-shell cc-main">
+            <div className="resource-list-header">
+              <div>Resource</div>
+              <div>Metrics</div>
+              <div>Status</div>
+            </div>
+            <div className="resource-list-count">{filteredResources.length} monitors</div>
+            <div className="resource-list">
+              {filteredResources.map(renderResourceRow)}
+            </div>
+          </section>
+
+          <aside className="cc-rail">
+            <div className="cc-panel">
+              <h3>Active Incidents</h3>
+              {activeIncidents.length === 0 ? (
+                <p className="cc-empty">No active incidents</p>
+              ) : (
+                <div className="cc-incident-list">
+                  {activeIncidents.map((incident) => (
+                    <button
+                      key={incident.id}
+                      className="cc-incident-item"
+                      onClick={() => navigate(`/resource/${incident.id}`)}
+                    >
+                      <span className="cc-incident-name">{incident.name}</span>
+                      <span className={`status-badge status-${incident.status}`}>{incident.status}</span>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
-          )}
-        </div>
+
+            <div className="cc-panel">
+              <h3>Groups</h3>
+              <div className="cc-group-list">
+                {groupCounts.map((g) => (
+                  <button
+                    key={g.id}
+                    className="cc-group-item"
+                    onClick={() => setGroupFilter(String(g.id))}
+                  >
+                    <span>{g.name}</span>
+                    <span>{g.count}</span>
+                  </button>
+                ))}
+                {ungroupedCount > 0 && (
+                  <button className="cc-group-item" onClick={() => setGroupFilter('ungrouped')}>
+                    <span>Ungrouped</span>
+                    <span>{ungroupedCount}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </aside>
+          </div>
       )}
 
       {showGroupModal && (
@@ -1272,13 +1296,13 @@ function ResourceDetail() {
       <Link to="/" className="back-button">← Back to Dashboard</Link>
 
       <div className="detail-section">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+        <div className="detail-header-row">
           <div>
             <h2>{resource.name}</h2>
-            <p style={{ color: '#666' }}>{resource.url}</p>
+            <p className="resource-url-detail">{resource.url}</p>
             <p className="resource-type">Type: {resource.type}</p>
           </div>
-          <div style={{ display: 'flex', gap: '1rem' }}>
+          <div className="detail-actions">
             <button className="btn" onClick={toggleEnabled}>
               {resource.enabled ? 'Disable' : 'Enable'}
             </button>
@@ -1295,12 +1319,12 @@ function ResourceDetail() {
           <div className="incident-badge">⚠️ Active Incident - Resource is currently DOWN</div>
         )}
         {resource.maintenance_mode && (
-          <div className="incident-badge" style={{ background: '#fff3cd', color: '#856404', borderColor: '#ffeeba' }}>
+          <div className="incident-badge maintenance-badge">
             🛠️ Maintenance mode active — alerts are suppressed
           </div>
         )}
 
-        <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginTop: '2rem' }}>
+        <div className="stats-grid stats-grid-4 detail-stats-grid">
           <div className="stat">
             <p className="stat-value">{resource.stats.uptime}%</p>
             <p className="stat-label">Uptime (24h)</p>
@@ -1329,7 +1353,7 @@ function ResourceDetail() {
         ) : !sla ? (
           <p>No SLA data yet</p>
         ) : (
-          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          <div className="stats-grid stats-grid-4">
             <div className="stat">
               <p className="stat-value">{sla.uptimePct}%</p>
               <p className="stat-label">Uptime</p>
@@ -1375,100 +1399,103 @@ function ResourceDetail() {
 
       <div className="detail-section">
         <h2>Recent Checks</h2>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
-          <div>
-            <label style={{ fontSize: '0.9rem', color: '#555', marginRight: '0.4rem' }}>Status</label>
+        <div className="section-controls">
+          <div className="filter-control">
+            <label>Status</label>
             <select value={checksStatus} onChange={(e) => { setChecksPage(0); setChecksStatus(e.target.value); }}>
               <option value="">All</option>
               <option value="up">Up</option>
               <option value="down">Down</option>
             </select>
           </div>
-          <div>
-            <label style={{ fontSize: '0.9rem', color: '#555', marginRight: '0.4rem' }}>Sort</label>
+          <div className="filter-control">
+            <label>Sort</label>
             <select value={checksSort} onChange={(e) => { setChecksPage(0); setChecksSort(e.target.value); }}>
               <option value="desc">Newest first</option>
               <option value="asc">Oldest first</option>
             </select>
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+          <div className="controls-pagination">
             <button className="btn btn-secondary" disabled={checksPage === 0 || checksLoading} onClick={() => setChecksPage(Math.max(0, checksPage - 1))}>← Prev</button>
             <button className="btn btn-secondary" disabled={checksLoading || checks.length < checksLimit} onClick={() => setChecksPage(checksPage + 1)}>Next →</button>
           </div>
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="table-wrapper">
+        <table className="data-table">
           <thead>
-            <tr style={{ borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Time</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Status</th>
-              <th style={{ padding: '0.75rem', textAlign: 'right' }}>Response Time</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Message</th>
+            <tr>
+              <th>Time</th>
+              <th>Status</th>
+              <th className="text-right">Response Time</th>
+              <th>Message</th>
             </tr>
           </thead>
           <tbody>
             {checksLoading ? (
-              <tr><td colSpan="4" style={{ padding: '0.75rem' }}>Loading checks...</td></tr>
+              <tr><td colSpan="4">Loading checks...</td></tr>
             ) : checks.length === 0 ? (
-              <tr><td colSpan="4" style={{ padding: '0.75rem' }}>No checks found</td></tr>
+              <tr><td colSpan="4">No checks found</td></tr>
             ) : checks.map((check) => (
-              <tr key={check.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.75rem' }}>
+              <tr key={check.id}>
+                <td>
                   {formatLocalTime(check.checked_at)}
                 </td>
-                <td style={{ padding: '0.75rem' }}>
+                <td>
                   <span className={`status-badge status-${check.status}`}>
                     {check.status}
                   </span>
                 </td>
-                <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                <td className="text-right">
                   {check.response_time ? `${check.response_time}ms` : '-'}
                 </td>
-                <td style={{ padding: '0.75rem', color: '#666' }}>
+                <td className="muted-cell">
                   {check.error_message || 'OK'}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       <div className="detail-section">
         <h2>Incidents Timeline</h2>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
-          <div>
-            <label style={{ fontSize: '0.9rem', color: '#555', marginRight: '0.4rem' }}>Status</label>
+        <div className="section-controls">
+          <div className="filter-control">
+            <label>Status</label>
             <select value={incidentsStatus} onChange={(e) => { setIncidentsPage(0); setIncidentsStatus(e.target.value); }}>
               <option value="all">All</option>
               <option value="open">Open</option>
               <option value="closed">Closed</option>
             </select>
           </div>
-          <div>
-            <label style={{ fontSize: '0.9rem', color: '#555', marginRight: '0.4rem' }}>Sort</label>
+          <div className="filter-control">
+            <label>Sort</label>
             <select value={incidentsSort} onChange={(e) => { setIncidentsPage(0); setIncidentsSort(e.target.value); }}>
               <option value="desc">Newest first</option>
               <option value="asc">Oldest first</option>
             </select>
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+          <div className="controls-pagination">
             <button className="btn btn-secondary" disabled={incidentsPage === 0 || incidentsLoading} onClick={() => setIncidentsPage(Math.max(0, incidentsPage - 1))}>← Prev</button>
             <button className="btn btn-secondary" disabled={incidentsLoading || incidents.length < incidentsLimit} onClick={() => setIncidentsPage(incidentsPage + 1)}>Next →</button>
           </div>
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="table-wrapper">
+        <table className="data-table">
           <thead>
-            <tr style={{ borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.75rem', textAlign: 'left', width: '25%' }}>Started</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left', width: '25%' }}>Resolved</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left', width: '15%' }}>Duration</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left', width: '35%' }}>Reason</th>
+            <tr>
+              <th className="w-25">Started</th>
+              <th className="w-25">Resolved</th>
+              <th className="w-15">Duration</th>
+              <th className="w-35">Reason</th>
             </tr>
           </thead>
           <tbody>
             {incidentsLoading ? (
-              <tr><td colSpan="4" style={{ padding: '0.75rem' }}>Loading incidents...</td></tr>
+              <tr><td colSpan="4">Loading incidents...</td></tr>
             ) : incidents.length === 0 ? (
-              <tr><td colSpan="4" style={{ padding: '0.75rem' }}>No incidents found</td></tr>
+              <tr><td colSpan="4">No incidents found</td></tr>
             ) : incidents.map((incident) => {
               const start = incident.started_at || incident.created_at;
               const end = incident.resolved_at;
@@ -1480,22 +1507,21 @@ function ResourceDetail() {
               const displayText = isExpanded ? description : (isTruncated ? description.substring(0, 60) + '...' : description);
               return (
                 <>
-                  <tr key={incident.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.75rem' }}>{start ? formatLocalTime(start) : '-'}</td>
-                    <td style={{ padding: '0.75rem' }}>{end ? formatLocalTime(end) : 'Open'}</td>
-                    <td style={{ padding: '0.75rem' }}>{durationText}</td>
-                    <td style={{ padding: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ cursor: 'pointer', color: '#0066cc', flex: 1 }} onClick={() => setExpandedIncidentId(isExpanded ? null : incident.id)}>
+                  <tr key={incident.id}>
+                    <td>{start ? formatLocalTime(start) : '-'}</td>
+                    <td>{end ? formatLocalTime(end) : 'Open'}</td>
+                    <td>{durationText}</td>
+                    <td className="incident-reason-cell">
+                      <span className="incident-reason-toggle" onClick={() => setExpandedIncidentId(isExpanded ? null : incident.id)}>
                         {displayText}
                         {isTruncated && (
-                          <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
+                          <span className="expand-indicator">
                             {isExpanded ? '▼' : '▶'}
                           </span>
                         )}
                       </span>
                       <button
-                        className="btn btn-secondary"
-                        style={{ marginLeft: '0.5rem', padding: '0.3rem 0.6rem', fontSize: '0.85rem' }}
+                        className="btn btn-secondary btn-compact"
                         onClick={() => handleEditIncident(incident)}
                       >
                         Edit
@@ -1503,8 +1529,8 @@ function ResourceDetail() {
                     </td>
                   </tr>
                   {isExpanded && (
-                    <tr style={{ backgroundColor: '#f9f9f9', borderBottom: '1px solid #eee' }}>
-                      <td colSpan="4" style={{ padding: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.9rem', color: '#333' }}>
+                    <tr className="expanded-row">
+                      <td colSpan="4" className="expanded-cell">
                         {description}
                       </td>
                     </tr>
@@ -1514,37 +1540,38 @@ function ResourceDetail() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       <div className="detail-section">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <div className="section-title-row">
           <h2>Maintenance Windows</h2>
           <button className="btn btn-primary" onClick={() => setShowMaintenanceModal(true)}>
             + Schedule Maintenance
           </button>
         </div>
         {maintenanceWindows.length === 0 ? (
-          <p style={{ color: '#666', textAlign: 'center', padding: '2rem' }}>No maintenance windows scheduled</p>
+          <p className="empty-copy">No maintenance windows scheduled</p>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="table-wrapper">
+          <table className="data-table">
             <thead>
-              <tr style={{ borderBottom: '2px solid #ddd' }}>
-                <th style={{ padding: '0.75rem', textAlign: 'left' }}>Start Time</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left' }}>End Time</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left' }}>Reason</th>
-                <th style={{ padding: '0.75rem', textAlign: 'right' }}>Actions</th>
+              <tr>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Reason</th>
+                <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {maintenanceWindows.map(window => (
-                <tr key={window.id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '0.75rem' }}>{formatLocalTime(window.start_time)}</td>
-                  <td style={{ padding: '0.75rem' }}>{formatLocalTime(window.end_time)}</td>
-                  <td style={{ padding: '0.75rem', color: '#666' }}>{window.reason || '-'}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                <tr key={window.id}>
+                  <td>{formatLocalTime(window.start_time)}</td>
+                  <td>{formatLocalTime(window.end_time)}</td>
+                  <td className="muted-cell">{window.reason || '-'}</td>
+                  <td className="text-right">
                     <button 
-                      className="btn btn-danger" 
-                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.85rem' }}
+                      className="btn btn-danger btn-compact"
                       onClick={() => handleDeleteMaintenanceWindow(window.id)}
                     >
                       Delete
@@ -1554,12 +1581,13 @@ function ResourceDetail() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
       {showMaintenanceModal && (
         <div className="modal-overlay" onClick={() => setShowMaintenanceModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2>Schedule Maintenance Window</h2>
             <form onSubmit={handleCreateMaintenanceWindow}>
               <div className="form-group">
@@ -1673,32 +1701,25 @@ function Navbar() {
 
   return (
     <nav className="navbar">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+      <div className="navbar-inner">
+        <div className="navbar-left">
           <h1>🔍 SkyWatch</h1>
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <Link to="/" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>Dashboard</Link>
-            <Link to="/history" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>History</Link>
-            <Link to="/sla" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>SLA</Link>
-            <Link to="/observability" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>Observability</Link>
-            <Link to="/notifications" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500 }}>Notifications</Link>
-            <Link to="/settings" style={{ color: 'white', textDecoration: 'none', opacity: 0.9, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className="navbar-links">
+            <Link to="/" className="nav-link">Dashboard</Link>
+            <Link to="/history" className="nav-link">History</Link>
+            <Link to="/sla" className="nav-link">SLA</Link>
+            <Link to="/observability" className="nav-link">Observability</Link>
+            <Link to="/notifications" className="nav-link">Notifications</Link>
+            <Link to="/settings" className="nav-link settings-link">
               Settings
               {!notificationsConfigured && (
-                <span style={{ 
-                  background: '#ffc107', 
-                  color: '#000', 
-                  padding: '0.15rem 0.5rem', 
-                  borderRadius: '12px', 
-                  fontSize: '0.7rem',
-                  fontWeight: 'bold'
-                }}>SETUP</span>
+                <span className="setup-badge">SETUP</span>
               )}
             </Link>
           </div>
         </div>
         {notificationsConfigured && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', opacity: 0.9 }}>
+          <div className="notifications-pill">
             <span>🔔</span>
             <span>Notifications Active</span>
           </div>
