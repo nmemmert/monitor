@@ -12,8 +12,18 @@ echo "📥 Pulling latest code..."
 git pull origin main
 
 echo "📦 Installing dependencies..."
-rm -rf node_modules package-lock.json
-npm ci --only=production 2>&1 | tail -20
+rm -rf node_modules
+
+# Prefer deterministic installs with npm ci when lockfile is present.
+if [ -f package-lock.json ]; then
+	if ! npm ci --omit=dev 2>&1 | tail -20; then
+		echo "npm ci failed, falling back to npm install..."
+		npm install --omit=dev 2>&1 | tail -20
+	fi
+else
+	echo "No package-lock.json found, using npm install..."
+	npm install --omit=dev 2>&1 | tail -20
+fi
 
 echo "🔄 Restarting application..."
 pm2 restart resource-monitor
