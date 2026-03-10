@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { formatLocalTime } from './utils/timeUtils';
+import './CommandCenterPages.css';
 
 function Notifications() {
   const [notifications, setNotifications] = useState([]);
@@ -106,11 +107,13 @@ function Notifications() {
   const totalPages = Math.ceil(total / itemsPerPage);
 
   return (
-    <div className="container" style={{ paddingTop: '2rem' }}>
-      <h2>📬 Notifications</h2>
+    <div className="container cc-page">
+      <div className="cc-page-header">
+        <h2 className="cc-page-title">Notifications</h2>
+      </div>
       
-      <div style={{ marginBottom: '2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+      <div className="cc-controls" style={{ marginBottom: '1rem' }}>
+        <div className="cc-controls">
           <button
             className={`btn ${filter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => { setFilter('all'); setCurrentPage(1); }}
@@ -143,50 +146,40 @@ function Notifications() {
       </div>
 
       {loading ? (
-        <p style={{ textAlign: 'center', color: '#999' }}>Loading...</p>
+        <p className="cc-empty">Loading...</p>
       ) : notifications.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#999' }}>
+        <div className="cc-empty">
           <p>No {filter === 'unread' ? 'unread ' : filter === 'read' ? 'read ' : ''}notifications</p>
         </div>
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+          <div className="notifications-list">
             {notifications.map((notification) => (
               <div
                 key={notification.id}
-                style={{
-                  padding: '1rem',
-                  border: '1px solid #ddd',
-                  borderRadius: '6px',
-                  backgroundColor: notification.read ? 'white' : '#f0f8ff',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  gap: '1rem'
-                }}
+                className={`notification-row ${notification.read ? 'is-read' : 'is-unread'}`}
               >
-                <div style={{ flex: 1 }}>
-                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>{notification.title}</h4>
-                  <p style={{ margin: '0 0 0.5rem 0', color: '#666', fontSize: '0.95rem' }}>
+                <div className="notification-content">
+                  <h4 className="notification-title">{notification.title}</h4>
+                  <p className="notification-message">
                     {notification.message}
                   </p>
-                  <div style={{ display: 'flex', gap: '1rem', fontSize: '0.85rem', color: '#999', flexWrap: 'wrap' }}>
+                  <div className="notification-meta">
                     {notification.resource_name && (
-                      <span style={{ backgroundColor: '#f0f0f0', padding: '0.25rem 0.5rem', borderRadius: '3px' }}>
-                        📌 {notification.resource_name}
+                      <span className="notification-chip">
+                        {notification.resource_name}
                       </span>
                     )}
-                    <span>⏰ {formatLocalTime(notification.created_at)}</span>
+                    <span>{formatLocalTime(notification.created_at)}</span>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                <div className="notification-actions">
                   {!notification.read && (
                     <button
                       className="btn btn-sm"
                       onClick={() => handleMarkAsRead(notification.id)}
                       title="Mark as read"
-                      style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
                     >
                       ✓ Read
                     </button>
@@ -195,7 +188,7 @@ function Notifications() {
                     className="btn btn-sm"
                     onClick={() => handleDelete(notification.id)}
                     title="Delete"
-                    style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', background: '#dc3545' }}
+                    style={{ background: '#b91c1c' }}
                   >
                     ✕ Delete
                   </button>
@@ -206,7 +199,7 @@ function Notifications() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div className="cc-pagination">
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                 <button
                   key={page}

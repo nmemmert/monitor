@@ -345,6 +345,40 @@ app.patch('/api/resources/:id/group', (req, res) => {
   }
 });
 
+// Toggle maintenance mode without overwriting other resource fields
+app.patch('/api/resources/:id/maintenance-mode', (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { maintenance_mode } = req.body;
+
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: 'Invalid resource id' });
+    }
+    if (typeof maintenance_mode !== 'boolean') {
+      return res.status(400).json({ error: 'maintenance_mode must be a boolean' });
+    }
+
+    const stmt = db.prepare('UPDATE resources SET maintenance_mode = ? WHERE id = ?');
+    const info = stmt.run(maintenance_mode ? 1 : 0, id);
+
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    // Invalidate related cache entries and broadcast live update
+    cache.invalidatePattern('history:');
+    cache.invalidatePattern('sla:');
+    if (global.broadcastDashboardUpdate) {
+      try { global.broadcastDashboardUpdate(); } catch {}
+    }
+
+    const updated = db.prepare('SELECT * FROM resources WHERE id = ?').get(id);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update maintenance mode', details: String(err) });
+  }
+});
+
 // Delete resource
 app.delete('/api/resources/:id', (req, res) => {
   const resource = db.prepare('SELECT name, url FROM resources WHERE id = ?').get(req.params.id);

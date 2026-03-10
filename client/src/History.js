@@ -12,6 +12,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import './App.css';
+import './CommandCenterPages.css';
 import { formatChartTime } from './utils/timeUtils';
 
 const asNumberOrZero = (value) => {
@@ -107,23 +108,16 @@ function History() {
   if (error) return <div className="container">Error loading history: {error}</div>;
 
   return (
-    <div className="container">
+    <div className="container cc-page">
       {limitedByRetention && (
-        <div style={{ 
-          padding: '1rem', 
-          marginBottom: '1rem', 
-          backgroundColor: '#fff3cd', 
-          border: '1px solid #ffc107', 
-          borderRadius: '4px',
-          color: '#856404'
-        }}>
+        <div className="cc-alert">
           ⚠️ Data limited to {effectiveDays} days (server retention setting). Requested {days} days.
         </div>
       )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <h2>Monitoring History</h2>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+      <div className="cc-page-header">
+        <h2 className="cc-page-title" style={{ color: '#f8fafc', fontWeight: 800 }}>Monitoring History</h2>
+        <div className="cc-controls">
+          <div className="cc-controls">
             {[7, 14, 30].map((d) => (
               <button
                 key={d}
@@ -136,21 +130,19 @@ function History() {
               </button>
             ))}
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', userSelect: 'none', background: '#f5f5f5', padding: '0.5rem 1rem', borderRadius: '4px', border: '1px solid #ddd' }}>
+          <label className="cc-pill-toggle">
             <input
               type="checkbox"
               checked={showAveraged}
               onChange={(e) => setShowAveraged(e.target.checked)}
-              style={{ cursor: 'pointer' }}
             />
             <span>Show Averages</span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', userSelect: 'none', background: '#f5f5f5', padding: '0.5rem 1rem', borderRadius: '4px', border: '1px solid #ddd' }}>
+          <label className="cc-pill-toggle">
             <input
               type="checkbox"
               checked={showTrends}
               onChange={(e) => setShowTrends(e.target.checked)}
-              style={{ cursor: 'pointer' }}
             />
             <span>Show Week-over-Week Trends</span>
           </label>
@@ -169,41 +161,43 @@ function History() {
             const chartData = prepareChartData(resource.checks || []);
 
             return (
-              <div key={resource.id} className="detail-section" style={{ marginBottom: '3rem', background: '#fff', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-                <h3 style={{ marginBottom: '0.5rem', color: '#667eea', fontSize: '1.5rem' }}>{resource.name}</h3>
-                <p style={{ color: '#666', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
-                  <span style={{ marginRight: '1.5rem' }}>Type: <strong style={{ color: '#333' }}>{resource.type.toUpperCase()}</strong></span>
-                  <span style={{ marginRight: '1.5rem' }}>Uptime: <strong style={{ color: resource.uptime >= 95 ? '#4caf50' : resource.uptime >= 80 ? '#ff9800' : '#f44336' }}>{resource.uptime}%</strong></span>
-                  <span>Avg Response: <strong style={{ color: '#333' }}>{resource.avgResponseTime}ms</strong></span>
+              <div key={resource.id} className="detail-section cc-surface history-resource-card">
+                <h3 className="history-resource-title">{resource.name}</h3>
+                <p className="history-resource-meta">
+                  <span>Type: <strong>{resource.type.toUpperCase()}</strong></span>
+                  <span>Uptime: <strong style={{ color: resource.uptime >= 95 ? '#22c55e' : resource.uptime >= 80 ? '#f59e0b' : '#ef4444' }}>{resource.uptime}%</strong></span>
+                  <span>Avg Response: <strong>{resource.avgResponseTime}ms</strong></span>
                 </p>
 
                 {chartData.length > 0 ? (
-                  <div className="chart-container" style={{ height: '400px', marginBottom: '1.5rem', background: '#fafafa', padding: '1rem', borderRadius: '6px' }}>
+                  <div className="chart-container history-chart-box">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                         <XAxis
                           dataKey="label"
-                          tick={{ fontSize: 12, fill: '#666' }}
+                          tick={{ fontSize: 12, fill: '#94a3b8' }}
                           angle={-45}
                           textAnchor="end"
                           height={80}
                         />
                         <YAxis 
                           yAxisId="left" 
-                          label={{ value: 'Response Time (ms)', angle: -90, position: 'insideLeft', style: { fill: '#666' } }}
-                          tick={{ fontSize: 12, fill: '#666' }}
+                          label={{ value: 'Response Time (ms)', angle: -90, position: 'insideLeft', style: { fill: '#94a3b8' } }}
+                          tick={{ fontSize: 12, fill: '#94a3b8' }}
                         />
                         <YAxis 
                           yAxisId="right" 
                           orientation="right" 
                           domain={[0, 1]} 
                           ticks={[0, 1]} 
-                          tick={{ fontSize: 12, fill: '#666' }}
-                          label={{ value: 'Status', angle: 90, position: 'insideRight', style: { fill: '#666' } }}
+                          tick={{ fontSize: 12, fill: '#94a3b8' }}
+                          label={{ value: 'Status', angle: 90, position: 'insideRight', style: { fill: '#94a3b8' } }}
                         />
                         <Tooltip
-                          contentStyle={{ backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}
+                          contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '10px' }}
+                          labelStyle={{ color: '#cbd5e1' }}
+                          itemStyle={{ color: '#e2e8f0' }}
                           formatter={(value, name) => {
                             if (name === 'Response Time') return `${value}ms`;
                             if (name === 'Status') return value === 1 ? '✓ UP' : '✗ DOWN';
@@ -249,18 +243,18 @@ function History() {
                     </ResponsiveContainer>
                   </div>
                 ) : (
-                  <div style={{ color: '#999', padding: '2rem', textAlign: 'center', background: '#fafafa', borderRadius: '6px' }}>No check data available</div>
+                  <div className="cc-empty">No check data available</div>
                 )}
 
                 {showTrends && resource.trendsData && (
-                  <div className="chart-container" style={{ height: '400px', marginBottom: '1.5rem', background: '#fafafa', padding: '1rem', borderRadius: '6px' }}>
-                    <h4 style={{ marginBottom: '1rem', color: '#667eea' }}>Week-over-Week Comparison</h4>
+                  <div className="chart-container history-chart-box">
+                    <h4 className="history-resource-title">Week-over-Week Comparison</h4>
                     {(() => {
                       const comparison = resource.trendsData?.comparison || {};
                       const responseTimeChange = asNumberOrZero(comparison.response_time_change);
                       const uptimeChange = asNumberOrZero(comparison.uptime_change);
                       return (
-                    <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
+                    <div className="history-trend-row">
                       <div>
                         <strong>Response Time Change:</strong>{' '}
                         <span style={{ color: responseTimeChange >= 0 ? '#f44336' : '#4caf50' }}>
@@ -280,20 +274,22 @@ function History() {
                     })()}
                     <ResponsiveContainer width="100%" height="90%">
                       <ComposedChart data={prepareTrendsChartData(resource.trendsData)} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                         <XAxis
                           dataKey="day"
-                          tick={{ fontSize: 12, fill: '#666' }}
+                          tick={{ fontSize: 12, fill: '#94a3b8' }}
                           angle={-45}
                           textAnchor="end"
                           height={80}
                         />
                         <YAxis 
-                          label={{ value: 'Response Time (ms)', angle: -90, position: 'insideLeft', style: { fill: '#666' } }}
-                          tick={{ fontSize: 12, fill: '#666' }}
+                          label={{ value: 'Response Time (ms)', angle: -90, position: 'insideLeft', style: { fill: '#94a3b8' } }}
+                          tick={{ fontSize: 12, fill: '#94a3b8' }}
                         />
                         <Tooltip
-                          contentStyle={{ backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '4px', padding: '10px' }}
+                          contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '10px' }}
+                          labelStyle={{ color: '#cbd5e1' }}
+                          itemStyle={{ color: '#e2e8f0' }}
                           formatter={(value, name) => {
                             if (name === 'Current Period') return `${value}ms`;
                             if (name === 'Previous Period') return `${value}ms`;
@@ -327,22 +323,22 @@ function History() {
                   </div>
                 )}
 
-                <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-                  <div className="stat" style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '6px' }}>
-                    <p className="stat-value" style={{ color: '#667eea', fontSize: '2rem', fontWeight: 'bold' }}>{resource.checks?.length || 0}</p>
-                    <p className="stat-label" style={{ color: '#666', fontSize: '0.9rem' }}>Total Checks</p>
+                <div className="cc-kpi-grid">
+                  <div className="cc-kpi">
+                    <p className="cc-kpi-label">Total Checks</p>
+                    <p className="cc-kpi-value" style={{ color: '#60a5fa' }}>{resource.checks?.length || 0}</p>
                   </div>
-                  <div className="stat" style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '6px' }}>
-                    <p className="stat-value" style={{ color: resource.uptime >= 95 ? '#4caf50' : resource.uptime >= 80 ? '#ff9800' : '#f44336', fontSize: '2rem', fontWeight: 'bold' }}>{resource.uptime}%</p>
-                    <p className="stat-label" style={{ color: '#666', fontSize: '0.9rem' }}>Uptime</p>
+                  <div className="cc-kpi">
+                    <p className="cc-kpi-label">Uptime</p>
+                    <p className="cc-kpi-value" style={{ color: resource.uptime >= 95 ? '#22c55e' : resource.uptime >= 80 ? '#f59e0b' : '#ef4444' }}>{resource.uptime}%</p>
                   </div>
-                  <div className="stat" style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '6px' }}>
-                    <p className="stat-value" style={{ color: '#667eea', fontSize: '2rem', fontWeight: 'bold' }}>{resource.avgResponseTime}ms</p>
-                    <p className="stat-label" style={{ color: '#666', fontSize: '0.9rem' }}>Avg Response</p>
+                  <div className="cc-kpi">
+                    <p className="cc-kpi-label">Avg Response</p>
+                    <p className="cc-kpi-value" style={{ color: '#a78bfa' }}>{resource.avgResponseTime}ms</p>
                   </div>
-                  <div className="stat" style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '6px' }}>
-                    <p className="stat-value" style={{ color: '#4caf50', fontSize: '2rem', fontWeight: 'bold' }}>{(resource.checks || []).filter((c) => c.status === 'up').length}/{resource.checks?.length || 0}</p>
-                    <p className="stat-label" style={{ color: '#666', fontSize: '0.9rem' }}>Successful Checks</p>
+                  <div className="cc-kpi">
+                    <p className="cc-kpi-label">Successful Checks</p>
+                    <p className="cc-kpi-value" style={{ color: '#34d399' }}>{(resource.checks || []).filter((c) => c.status === 'up').length}/{resource.checks?.length || 0}</p>
                   </div>
                 </div>
               </div>
@@ -350,7 +346,7 @@ function History() {
           })}
 
           {totalItems > pageSize && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '2rem', padding: '1.5rem', background: '#f5f5f5', borderRadius: '8px' }}>
+            <div className="cc-pagination">
               <button 
                 className="btn btn-secondary" 
                 onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
@@ -358,8 +354,8 @@ function History() {
               >
                 ← Previous
               </button>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ color: '#666', fontSize: '0.9rem' }}>Page</span>
+              <div className="cc-controls">
+                <span>Page</span>
                 <input 
                   type="number" 
                   value={currentPage} 
@@ -367,14 +363,14 @@ function History() {
                     const page = Math.max(1, Math.min(Math.ceil(totalItems / pageSize), parseInt(e.target.value) || 1));
                     setCurrentPage(page);
                   }}
-                  style={{ width: '50px', padding: '0.5rem', border: '1px solid #ddd', borderRadius: '4px', textAlign: 'center' }}
+                  className="cc-input-sm"
                 />
-                <span style={{ color: '#666', fontSize: '0.9rem' }}>of {Math.ceil(totalItems / pageSize)}</span>
+                <span>of {Math.ceil(totalItems / pageSize)}</span>
               </div>
               <select 
                 value={pageSize} 
                 onChange={(e) => { setPageSize(parseInt(e.target.value)); setCurrentPage(1); }}
-                style={{ padding: '0.5rem', border: '1px solid #ddd', borderRadius: '4px', background: '#fff' }}
+                className="cc-select-sm"
               >
                 <option value={5}>5 per page</option>
                 <option value={10}>10 per page</option>

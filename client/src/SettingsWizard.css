@@ -1,33 +1,39 @@
 .settings-wizard {
-  max-width: 900px;
+  max-width: 980px;
   margin: 0 auto;
+  color: #e2e8f0;
+}
+
+.settings-wizard > h2 {
+  color: #f8fafc;
+  text-shadow: 0 1px 0 rgba(15, 23, 42, 0.3);
 }
 
 .settings-description {
-  color: #666;
-  margin-bottom: 2rem;
+  color: #cbd5e1;
+  margin-bottom: 1.4rem;
 }
 
 .settings-section {
-  background: white;
-  border-radius: 8px;
-  padding: 2rem;
-  margin-bottom: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  background: rgba(15, 23, 42, 0.85);
+  border-radius: 12px;
+  padding: 1.35rem;
+  margin-bottom: 1rem;
+  border: 1px solid #334155;
 }
 
 .settings-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 2px solid #f0f0f0;
+  margin-bottom: 1rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid #334155;
 }
 
 .settings-header h3 {
   margin: 0;
-  color: #333;
+  color: #f8fafc;
 }
 
 .settings-form {
@@ -43,23 +49,43 @@
 
 .form-group small {
   display: block;
-  color: #999;
+  color: #cbd5e1;
   font-size: 0.85rem;
   margin-top: 0.25rem;
 }
 
+.settings-wizard .form-group label {
+  color: #e2e8f0;
+}
+
+.settings-wizard .form-group input,
+.settings-wizard .form-group select,
+.settings-wizard .form-group textarea {
+  background: #0b1325;
+  color: #f8fafc;
+  border: 1px solid #334155;
+}
+
+.settings-wizard .form-group input:focus,
+.settings-wizard .form-group select:focus,
+.settings-wizard .form-group textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.28);
+}
+
 .info-box {
-  background: #f8f9fa;
-  border-left: 4px solid #667eea;
+  background: #0b1325;
+  border-left: 4px solid #60a5fa;
   padding: 1rem;
   margin: 1.5rem 0;
-  border-radius: 4px;
+  border-radius: 8px;
+  border: 1px solid #334155;
 }
 
 .info-box strong {
   display: block;
   margin-bottom: 0.5rem;
-  color: #333;
+  color: #f8fafc;
 }
 
 .info-box ol {
@@ -69,11 +95,11 @@
 
 .info-box li {
   margin: 0.25rem 0;
-  color: #666;
+  color: #e2e8f0;
 }
 
 .info-box a {
-  color: #667eea;
+  color: #bfdbfe;
   text-decoration: none;
 }
 
@@ -82,12 +108,14 @@
 }
 
 .info-box pre {
-  background: white;
+  background: #111827;
+  color: #f8fafc;
   padding: 1rem;
-  border-radius: 4px;
+  border-radius: 8px;
   overflow-x: auto;
   font-size: 0.85rem;
   margin-top: 0.5rem;
+  border: 1px solid #334155;
 }
 
 .toggle-switch {
@@ -110,7 +138,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #ccc;
+  background-color: #334155;
   transition: .4s;
   border-radius: 34px;
 }
@@ -122,13 +150,17 @@
   width: 26px;
   left: 4px;
   bottom: 4px;
-  background-color: white;
+  background-color: #e2e8f0;
   transition: .4s;
   border-radius: 50%;
 }
 
 .toggle-switch input:checked + .toggle-slider {
-  background-color: #667eea;
+  background-color: #2563eb;
+}
+
+.toggle-switch input:focus + .toggle-slider {
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.28);
 }
 
 .toggle-switch input:checked + .toggle-slider:before {
@@ -136,13 +168,19 @@
 }
 
 .btn-secondary {
-  background: #6c757d;
-  color: white;
+  background: #1e293b;
+  color: #f8fafc;
   margin-top: 1rem;
+  border: 1px solid #334155;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: #5a6268;
+  background: #334155;
+}
+
+.btn-secondary:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
 }
 
 .btn-secondary:disabled {
@@ -157,15 +195,15 @@
 }
 
 .test-result.success {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
+  background: #052e16;
+  color: #86efac;
+  border: 1px solid #166534;
 }
 
 .test-result.error {
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+  background: #3f1d1d;
+  color: #fda4af;
+  border: 1px solid #7f1d1d;
 }
 
 .test-result strong {
@@ -201,15 +239,15 @@
 }
 
 .save-status.success {
-  background: #4caf50;
-  color: white;
-  border-left: 4px solid #388e3c;
+  background: #166534;
+  color: #dcfce7;
+  border-left: 4px solid #22c55e;
 }
 
 .save-status.error {
-  background: #f44336;
-  color: white;
-  border-left: 4px solid #d32f2f;
+  background: #7f1d1d;
+  color: #fee2e2;
+  border-left: 4px solid #ef4444;
 }
 
 .save-status strong {
