@@ -2,9 +2,14 @@
 	padding-top: 2rem;
 }
 
+.observability-page h2 {
+	color: #f8fafc;
+	text-shadow: 0 1px 0 rgba(15, 23, 42, 0.3);
+}
+
 .obs-tabs {
 	margin-bottom: 2rem;
-	border-bottom: 1px solid #dbe2ea;
+	border-bottom: 1px solid #334155;
 	display: flex;
 	gap: 0.5rem;
 	flex-wrap: wrap;
@@ -19,15 +24,20 @@
 	background: transparent;
 	cursor: pointer;
 	font-weight: 600;
-	color: #64748b;
+	color: #cbd5e1;
+}
+
+.obs-tab:focus-visible {
+	outline: 2px solid #60a5fa;
+	outline-offset: 2px;
 }
 
 .obs-tab.is-active {
-	border-bottom-color: #0ea5a2;
-	color: #0f172a;
-	background: #ffffff;
-	border-color: #dbe2ea;
-	border-bottom-color: #0ea5a2;
+	border-bottom-color: #60a5fa;
+	color: #f8fafc;
+	background: #0f172a;
+	border-color: #334155;
+	border-bottom-color: #60a5fa;
 }
 
 .obs-summary-grid {
@@ -39,30 +49,30 @@
 
 .obs-summary-card {
 	padding: 1rem;
-	border: 1px solid #dbe2ea;
+	border: 1px solid #334155;
 	border-radius: 14px;
-	background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-	box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+	background: linear-gradient(180deg, #0f172a 0%, #0b1325 100%);
+	box-shadow: none;
 }
 
 .obs-card-label {
 	font-size: 0.85rem;
-	color: #64748b;
+	color: #cbd5e1;
 }
 
 .obs-card-value {
 	font-size: 1.5rem;
 	font-weight: 700;
 	margin-top: 0.45rem;
-	color: #0f172a;
+	color: #f8fafc;
 }
 
 .obs-card-value.is-danger {
-	color: #b91c1c;
+	color: #f87171;
 }
 
 .obs-card-value.is-ok {
-	color: #0f766e;
+	color: #34d399;
 }
 
 .obs-table-wrap {
@@ -81,9 +91,9 @@
 .obs-table th {
 	text-align: left;
 	padding: 0.75rem;
-	background: #f1f5f9;
-	border-bottom: 2px solid #dbe2ea;
-	color: #1e293b;
+	background: #0f172a;
+	border-bottom: 2px solid #334155;
+	color: #e2e8f0;
 	font-size: 0.84rem;
 	text-transform: uppercase;
 	letter-spacing: 0.02em;
@@ -91,11 +101,12 @@
 
 .obs-table td {
 	padding: 0.75rem;
-	border-bottom: 1px solid #e5e7eb;
+	border-bottom: 1px solid #1f2937;
+	color: #f1f5f9;
 }
 
 .obs-table tbody tr:hover {
-	background: #f0f9ff;
+	background: #1e293b;
 }
 
 .obs-right {
@@ -105,38 +116,38 @@
 .obs-rate-pill {
 	padding: 0.25rem 0.5rem;
 	border-radius: 4px;
-	font-size: 0.85rem;
+	font-size: 0.88rem;
 	font-weight: 600;
 }
 
 .obs-rate-pill.is-good {
-	background: #dcfce7;
-	color: #166534;
+	background: #052e16;
+	color: #4ade80;
 }
 
 .obs-rate-pill.is-warn {
-	background: #fef3c7;
-	color: #92400e;
+	background: #3f2a0f;
+	color: #fbbf24;
 }
 
 .obs-empty-copy {
-	color: #94a3b8;
+	color: #cbd5e1;
 	text-align: center;
 	padding: 2rem;
 }
 
 .obs-zebra {
-	background: #f8fafc;
+	background: #0b1325;
 }
 
 .obs-error-code {
 	font-size: 0.85rem;
-	color: #b91c1c;
+	color: #f87171;
 }
 
 .obs-muted-sm {
 	font-size: 0.85rem;
-	color: #64748b;
+	color: #cbd5e1;
 }
 
 .obs-small {
@@ -146,15 +157,15 @@
 .obs-audit-summary {
 	margin-bottom: 2rem;
 	padding: 1rem;
-	background: #f8fafc;
+	background: #0f172a;
 	border-radius: 12px;
-	border: 1px solid #dbe2ea;
+	border: 1px solid #334155;
 }
 
 .obs-audit-summary-line {
 	margin: 0.25rem 0;
 	font-size: 0.9rem;
-	color: #64748b;
+	color: #e2e8f0;
 }
 
 .obs-filters-grid {
@@ -166,15 +177,21 @@
 
 .obs-filter-input {
 	padding: 0.5rem;
-	border: 1px solid #dbe2ea;
+	border: 1px solid #334155;
 	border-radius: 10px;
-	background: #fff;
+	background: #111827;
+	color: #e2e8f0;
 }
 
 .obs-filter-input:focus {
 	outline: none;
-	border-color: #0ea5a2;
-	box-shadow: 0 0 0 3px rgba(14, 165, 162, 0.18);
+	border-color: #2563eb;
+	box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.obs-toggle-code:focus-visible {
+	outline: 2px solid #60a5fa;
+	outline-offset: 2px;
 }
 
 .obs-click-row {
@@ -183,11 +200,11 @@
 
 .obs-toggle-code {
 	cursor: pointer;
-	color: #0f766e;
+	color: #bfdbfe;
 }
 
 .obs-expanded-row {
-	background: #f0f9ff;
+	background: #111b2e;
 }
 
 .obs-expanded-cell {
@@ -196,11 +213,12 @@
 
 .obs-pre {
 	margin-top: 0.5rem;
-	background: #fff;
+	background: #0b1325;
+	color: #e2e8f0;
 	padding: 0.75rem;
 	border-radius: 8px;
 	overflow-x: auto;
-	border: 1px solid #dbe2ea;
+	border: 1px solid #334155;
 }
 
 @media (max-width: 768px) {

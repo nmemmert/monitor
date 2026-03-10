@@ -52,6 +52,9 @@ function Dashboard() {
   });
   const [tagFilter, setTagFilter] = useState('');
   const [groupFilter, setGroupFilter] = useState('all');
+  const [quickFilter, setQuickFilter] = useState('all');
+  const [sortKey, setSortKey] = useState('severity');
+  const [renderLimit, setRenderLimit] = useState(120);
   const [groupData, setGroupData] = useState({ name: '', description: '' });
   const wsRef = useRef(null);
   const actionsRef = useRef(null);
@@ -238,6 +241,17 @@ function Dashboard() {
     }
   };
 
+  const handleToggleMaintenance = async (resource) => {
+    try {
+      await axios.patch(`/api/resources/${resource.id}/maintenance-mode`, {
+        maintenance_mode: !resource.maintenance_mode,
+      });
+      loadResources();
+    } catch (error) {
+      alert('Error updating maintenance mode');
+    }
+  };
+
   const handleExportCSV = async () => {
     try {
       const response = await axios.get('/api/resources/export', {
@@ -283,7 +297,28 @@ function Dashboard() {
     return acc;
   }, {});
 
-  // Filter resources by tag/group and sort for stable scanning
+  const getTrend = (recentChecks = []) => {
+    const withTimes = recentChecks.filter((c) => typeof c.response_time === 'number' && c.response_time > 0);
+    if (withTimes.length < 2) return 'flat';
+    const first = withTimes[0].response_time;
+    const last = withTimes[withTimes.length - 1].response_time;
+    if (first <= 0) return 'flat';
+    const deltaPct = ((last - first) / first) * 100;
+    if (deltaPct <= -12) return 'better';
+    if (deltaPct >= 12) return 'worse';
+    return 'flat';
+  };
+
+  const getSeverityScore = (r) => {
+    const statusScore = r.status === 'down' ? 1000 : r.status === 'unknown' ? 400 : 0;
+    const incidentScore = r.hasActiveIncident ? 350 : 0;
+    const maintenanceOffset = r.maintenance_mode ? -300 : 0;
+    const uptimePenalty = Math.max(0, 100 - parseFloat(r.uptime || 0)) * 3;
+    const responsePenalty = Math.min(250, Math.round((parseInt(r.avgResponseTime || 0, 10) || 0) / 20));
+    return statusScore + incidentScore + uptimePenalty + responsePenalty + maintenanceOffset;
+  };
+
+  // Filter resources by tag/group/quick filters
   const filteredResources = resources
     .filter((r) => {
       if (tagFilter) {
@@ -292,9 +327,39 @@ function Dashboard() {
       }
       if (groupFilter === 'ungrouped') return !r.group_id;
       if (groupFilter !== 'all') return String(r.group_id || '') === groupFilter;
+
+      if (quickFilter === 'down' && r.status !== 'down') return false;
+      if (quickFilter === 'maintenance' && !r.maintenance_mode) return false;
+      if (quickFilter === 'nodata' && (!r.recentChecks || r.recentChecks.length === 0)) return false;
+      if (quickFilter === 'slow' && (parseInt(r.avgResponseTime || 0, 10) || 0) < 1500) return false;
+
       return true;
-    })
-    .sort((a, b) => {
+    });
+
+  const sortedResources = [...filteredResources].sort((a, b) => {
+      if (sortKey === 'name') {
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      }
+      if (sortKey === 'status') {
+        const rank = { down: 0, unknown: 1, up: 2 };
+        return (rank[a.status] ?? 3) - (rank[b.status] ?? 3);
+      }
+      if (sortKey === 'uptime') {
+        return parseFloat(a.uptime || 0) - parseFloat(b.uptime || 0);
+      }
+      if (sortKey === 'response') {
+        return (parseInt(b.avgResponseTime || 0, 10) || 0) - (parseInt(a.avgResponseTime || 0, 10) || 0);
+      }
+      if (sortKey === 'lastcheck') {
+        const ta = a.lastCheck ? new Date(a.lastCheck).getTime() : 0;
+        const tb = b.lastCheck ? new Date(b.lastCheck).getTime() : 0;
+        return tb - ta;
+      }
+
+      // Default: severity first
+      const severityDiff = getSeverityScore(b) - getSeverityScore(a);
+      if (severityDiff !== 0) return severityDiff;
+
       const groupA = (groupNameById[a.group_id] || 'Ungrouped').toLowerCase();
       const groupB = (groupNameById[b.group_id] || 'Ungrouped').toLowerCase();
       if (groupA < groupB) return -1;
@@ -302,18 +367,24 @@ function Dashboard() {
       return String(a.name || '').localeCompare(String(b.name || ''));
     });
 
-  const totalCount = filteredResources.length;
-  const upCount = filteredResources.filter((r) => r.status === 'up').length;
-  const downCount = filteredResources.filter((r) => r.status === 'down').length;
-  const maintenanceCount = filteredResources.filter((r) => r.maintenance_mode).length;
+  useEffect(() => {
+    setRenderLimit(120);
+  }, [tagFilter, groupFilter, quickFilter, sortKey]);
+
+  const visibleResources = sortedResources.slice(0, renderLimit);
+
+  const totalCount = sortedResources.length;
+  const upCount = sortedResources.filter((r) => r.status === 'up').length;
+  const downCount = sortedResources.filter((r) => r.status === 'down').length;
+  const maintenanceCount = sortedResources.filter((r) => r.maintenance_mode).length;
   const avgUptime = totalCount
-    ? (filteredResources.reduce((sum, r) => sum + parseFloat(r.uptime || 0), 0) / totalCount).toFixed(2)
+    ? (sortedResources.reduce((sum, r) => sum + parseFloat(r.uptime || 0), 0) / totalCount).toFixed(2)
     : '0.00';
   const avgResponse = totalCount
-    ? Math.round(filteredResources.reduce((sum, r) => sum + parseInt(r.avgResponseTime || 0, 10), 0) / totalCount)
+    ? Math.round(sortedResources.reduce((sum, r) => sum + parseInt(r.avgResponseTime || 0, 10), 0) / totalCount)
     : 0;
 
-  const activeIncidents = filteredResources
+  const activeIncidents = sortedResources
     .filter((r) => r.hasActiveIncident || r.status === 'down')
     .slice(0, 8);
 
@@ -321,11 +392,11 @@ function Dashboard() {
     .map((g) => ({
       id: g.id,
       name: g.name,
-      count: filteredResources.filter((r) => String(r.group_id || '') === String(g.id)).length,
+      count: sortedResources.filter((r) => String(r.group_id || '') === String(g.id)).length,
     }))
     .filter((g) => g.count > 0);
 
-  const ungroupedCount = filteredResources.filter((r) => !r.group_id).length;
+  const ungroupedCount = sortedResources.filter((r) => !r.group_id).length;
 
   const renderResourceRow = (resource) => {
     const sparkData = (resource.recentChecks || []).map((c, idx) => ({
@@ -334,6 +405,7 @@ function Dashboard() {
       statusValue: c.status === 'up' ? 1 : 0,
     }));
     const groupName = groupNameById[resource.group_id] || 'Ungrouped';
+    const trend = getTrend(resource.recentChecks || []);
 
     return (
       <div
@@ -358,7 +430,10 @@ function Dashboard() {
             <p className="stat-label">Uptime</p>
           </div>
           <div>
-            <p className="stat-value small">{resource.avgResponseTime}ms</p>
+            <p className="stat-value small">
+              {resource.avgResponseTime}ms
+              <span className={`trend-chip trend-${trend}`}>{trend === 'better' ? '↓' : trend === 'worse' ? '↑' : '→'}</span>
+            </p>
             <p className="stat-label">Avg Resp</p>
           </div>
           <div className="row-sparkline">
@@ -379,8 +454,15 @@ function Dashboard() {
             {resource.status}
           </span>
           <div className="row-actions">
-            <button className="btn-icon" title="Edit" onClick={(e) => { e.stopPropagation(); openEditModal(resource); }}>✎</button>
-            <button className="btn-icon" title="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteResource(resource.id); }}>🗑</button>
+            <button className="btn-icon action-edit" title="Edit" onClick={(e) => { e.stopPropagation(); openEditModal(resource); }}>✎</button>
+            <button
+              className="btn-icon action-maint"
+              title={resource.maintenance_mode ? 'End maintenance' : 'Start maintenance'}
+              onClick={(e) => { e.stopPropagation(); handleToggleMaintenance(resource); }}
+            >
+              {resource.maintenance_mode ? '✅' : '🛠'}
+            </button>
+            <button className="btn-icon action-delete" title="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteResource(resource.id); }}>🗑</button>
           </div>
           <p className="last-check">
             Last: {resource.lastCheck ? formatLocalTime(resource.lastCheck) : 'Never'}
@@ -430,6 +512,18 @@ function Dashboard() {
               <option key={g.id} value={String(g.id)}>{g.name}</option>
             ))}
             <option value="ungrouped">Ungrouped</option>
+          </select>
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value)}
+            className="tag-filter-input"
+          >
+            <option value="severity">Sort: Severity</option>
+            <option value="status">Sort: Status</option>
+            <option value="uptime">Sort: Uptime</option>
+            <option value="response">Sort: Response</option>
+            <option value="lastcheck">Sort: Last Check</option>
+            <option value="name">Sort: Name</option>
           </select>
           <div ref={actionsRef} className="actions-menu-wrapper">
             <button
@@ -487,6 +581,14 @@ function Dashboard() {
         </div>
       </div>
 
+      <div className="quick-filter-row">
+        <button className={`quick-chip ${quickFilter === 'all' ? 'active' : ''}`} onClick={() => setQuickFilter('all')}>All</button>
+        <button className={`quick-chip ${quickFilter === 'down' ? 'active' : ''}`} onClick={() => setQuickFilter('down')}>Down</button>
+        <button className={`quick-chip ${quickFilter === 'maintenance' ? 'active' : ''}`} onClick={() => setQuickFilter('maintenance')}>Maintenance</button>
+        <button className={`quick-chip ${quickFilter === 'slow' ? 'active' : ''}`} onClick={() => setQuickFilter('slow')}>High Latency</button>
+        <button className={`quick-chip ${quickFilter === 'nodata' ? 'active' : ''}`} onClick={() => setQuickFilter('nodata')}>No Data</button>
+      </div>
+
       <div className="cc-metrics-grid">
         <div className="cc-metric-card">
           <p className="cc-metric-label">Monitors</p>
@@ -519,7 +621,7 @@ function Dashboard() {
           <h3>No resources yet</h3>
           <p>Add your first resource to start monitoring</p>
         </div>
-      ) : filteredResources.length === 0 ? (
+      ) : sortedResources.length === 0 ? (
         <div className="empty-state">
           <h3>No resources match filter</h3>
           <p>Try adjusting your tag/group filters</p>
@@ -532,9 +634,14 @@ function Dashboard() {
               <div>Metrics</div>
               <div>Status</div>
             </div>
-            <div className="resource-list-count">{filteredResources.length} monitors</div>
+              <div className="resource-list-count">{visibleResources.length} of {sortedResources.length} monitors</div>
             <div className="resource-list">
-              {filteredResources.map(renderResourceRow)}
+                {visibleResources.map(renderResourceRow)}
+                {visibleResources.length < sortedResources.length && (
+                  <button className="load-more-btn" onClick={() => setRenderLimit((prev) => prev + 120)}>
+                    Load 120 more
+                  </button>
+                )}
             </div>
           </section>
 
@@ -1387,11 +1494,15 @@ function ResourceDetail() {
         <div className="chart-container">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" />
-              <YAxis />
-              <Tooltip />
-              <Line type="monotone" dataKey="responseTime" stroke="#667eea" strokeWidth={2} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis dataKey="time" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+              <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px' }}
+                labelStyle={{ color: '#cbd5e1' }}
+                itemStyle={{ color: '#e2e8f0' }}
+              />
+              <Line type="monotone" dataKey="responseTime" stroke="#60a5fa" strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
