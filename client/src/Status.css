@@ -319,3 +319,54 @@
     padding: 0.5rem;
   }
 }
+
+/* ── 90-day uptime bars ── */
+.uptime-history {
+  display: flex;
+  gap: 2px;
+  height: 28px;
+  margin: 0.75rem 0 0.25rem;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.uptime-day-bar {
+  flex: 1;
+  min-width: 1px;
+  border-radius: 1px;
+  cursor: default;
+  transition: opacity 0.15s;
+}
+
+.uptime-day-bar:hover {
+  opacity: 0.7;
+}
+
+.uptime-history-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin-bottom: 0.75rem;
+}
+
+/* ── Spark bars in dashboard ── */
+.status-spark-bars {
+  display: flex;
+  gap: 2px;
+  align-items: stretch;
+  height: 44px;
+  width: 100%;
+}
+
+.spark-bar {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 1px;
+  transition: opacity 0.15s;
+}
+
+.spark-bar:hover { opacity: 0.65; }
+.spark-bar-up      { background: #14b8a6; }
+.spark-bar-down    { background: #ef4444; }
+.spark-bar-unknown { background: #475569; }

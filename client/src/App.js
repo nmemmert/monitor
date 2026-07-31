@@ -26,6 +26,8 @@ function Navbar() {
         localStorage.setItem('serverTimezone', response.data.timezone);
         localStorage.setItem('serverTimezoneTime', Date.now().toString());
       }
+      const theme = response.data.theme || 'dark';
+      document.documentElement.setAttribute('data-theme', theme);
     } catch (error) {
       // Notifications check error handled
     }

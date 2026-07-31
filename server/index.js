@@ -220,6 +220,7 @@ function getDashboardPayload() {
       avgResponseTime: stats.avgResponseTime,
       lastCheck: lastCheck?.checked_at,
       hasActiveIncident: !!activeIncident,
+      activeIncidentId: activeIncident?.id || null,
       recentChecks,
     };
   });
@@ -1771,6 +1772,20 @@ app.get('/api/status-page', rateLimit(60), (req, res) => {
       ORDER BY mw.start_time DESC
     `).all();
 
+    const dailyRows = db.prepare(`
+      SELECT resource_id, date(checked_at) as day,
+             ROUND(SUM(CASE WHEN status='up' THEN 100.0 ELSE 0 END) / COUNT(*), 1) as uptime_pct
+      FROM checks
+      WHERE checked_at > datetime('now', '-90 days')
+      GROUP BY resource_id, date(checked_at)
+      ORDER BY resource_id, day ASC
+    `).all();
+    const dailyByResource = {};
+    dailyRows.forEach(row => {
+      if (!dailyByResource[row.resource_id]) dailyByResource[row.resource_id] = [];
+      dailyByResource[row.resource_id].push({ day: row.day, uptime: row.uptime_pct });
+    });
+
     const overview = resources.map(resource => {
       const stats = monitorService.getResourceStats(resource.id, 24);
       const lastCheck = monitorService.getLastCheck(resource.id);
@@ -1783,6 +1798,7 @@ app.get('/api/status-page', rateLimit(60), (req, res) => {
         uptime: stats.uptime,
         avgResponseTime: stats.avgResponseTime,
         lastCheck: lastCheck?.checked_at,
+        dailyUptime: dailyByResource[resource.id] || [],
       };
     });
 
@@ -1879,7 +1895,8 @@ app.get('/api/resources/export', (req, res) => {
     }
 
     // CSV header
-    const headers = ['name', 'url', 'type', 'check_interval', 'timeout', 'sla_target', 'tags', 'group_id', 'email_to'];
+    const headers = ['name', 'url', 'type', 'check_interval', 'timeout', 'sla_target', 'tags', 'group_id', 'email_to',
+      'http_method', 'http_body', 'heartbeat_timeout', 'is_public', 'consecutive_failures_threshold', 'response_time_threshold'];
     const csvRows = [headers.join(',')];
 
     // CSV rows
@@ -1894,6 +1911,12 @@ app.get('/api/resources/export', (req, res) => {
         `"${(resource.tags || '').replace(/"/g, '""')}"`,
         resource.group_id || '',
         `"${(resource.email_to || '').replace(/"/g, '""')}"`,
+        resource.http_method || 'GET',
+        `"${(resource.http_body || '').replace(/"/g, '""')}"`,
+        resource.heartbeat_timeout || 300000,
+        resource.is_public !== 0 ? 1 : 0,
+        resource.consecutive_failures_threshold || 1,
+        resource.response_time_threshold || '',
       ];
       csvRows.push(row.join(','));
     });
@@ -2083,8 +2106,9 @@ app.post('/api/resources/import', express.text({ type: 'text/csv' }), (req, res)
         }
 
         const stmt = db.prepare(`
-          INSERT INTO resources (name, url, type, check_interval, timeout, sla_target, tags, group_id, email_to)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO resources (name, url, type, check_interval, timeout, sla_target, tags, group_id, email_to,
+            http_method, http_body, heartbeat_timeout, is_public, consecutive_failures_threshold, response_time_threshold)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         stmt.run(
@@ -2096,7 +2120,13 @@ app.post('/api/resources/import', express.text({ type: 'text/csv' }), (req, res)
           slaTarget,
           row.tags || '',
           row.group_id ? parseInt(row.group_id) : null,
-          row.email_to || ''
+          row.email_to || '',
+          row.http_method || 'GET',
+          row.http_body || null,
+          parseInt(row.heartbeat_timeout) || 300000,
+          row.is_public === '0' || row.is_public === 'false' ? 0 : 1,
+          parseInt(row.consecutive_failures_threshold) || 1,
+          row.response_time_threshold ? parseInt(row.response_time_threshold) : null
         );
 
         imported.push(row.name);

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import NotificationCenter from './NotificationCenter';
 import { formatLocalTime } from './utils/timeUtils';
 
@@ -46,6 +45,7 @@ function Dashboard() {
   const [sortKey, setSortKey] = useState('severity');
   const [renderLimit, setRenderLimit] = useState(120);
   const [groupData, setGroupData] = useState({ name: '', description: '' });
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const wsRef = useRef(null);
   const wsReconnectTimer = useRef(null);
   const wsReconnectDelay = useRef(1000);
@@ -218,6 +218,54 @@ function Dashboard() {
     }
   };
 
+  const handleAcknowledge = async (incidentId) => {
+    try {
+      await axios.post(`/api/incidents/${incidentId}/acknowledge`);
+      loadResources();
+    } catch (error) {
+      showNotification('Error', 'Failed to acknowledge incident', 'error');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Delete ${selectedIds.size} resource(s)?`)) return;
+    try {
+      await Promise.all([...selectedIds].map(id => axios.delete(`/api/resources/${id}`)));
+      setSelectedIds(new Set());
+      loadResources();
+    } catch (error) {
+      showNotification('Error', 'Some deletes failed', 'error');
+    }
+  };
+
+  const handleBulkMaintenance = async (enable) => {
+    try {
+      await Promise.all([...selectedIds].map(id =>
+        axios.patch(`/api/resources/${id}/maintenance-mode`, { maintenance_mode: enable })
+      ));
+      setSelectedIds(new Set());
+      loadResources();
+    } catch (error) {
+      showNotification('Error', 'Some maintenance updates failed', 'error');
+    }
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === visibleResources.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(visibleResources.map(r => r.id)));
+    }
+  };
+
   const handleExportCSV = async () => {
     try {
       const response = await axios.get('/api/resources/export', { responseType: 'blob' });
@@ -330,6 +378,10 @@ function Dashboard() {
 
   const activeIncidents = sortedResources.filter((r) => r.hasActiveIncident || r.status === 'down').slice(0, 8);
 
+  const allTags = [...new Set(
+    resources.flatMap(r => (r.tags || '').split(',').map(t => t.trim()).filter(Boolean))
+  )].sort();
+
   const groupCounts = groups
     .map((g) => ({
       id: g.id,
@@ -341,20 +393,21 @@ function Dashboard() {
   const ungroupedCount = sortedResources.filter((r) => !r.group_id).length;
 
   const renderResourceRow = (resource) => {
-    const sparkData = (resource.recentChecks || []).map((c, idx) => ({
-      idx,
-      responseTime: c.response_time || 0,
-      statusValue: c.status === 'up' ? 1 : 0,
-    }));
+    const checks = resource.recentChecks || [];
     const groupName = groupNameById[resource.group_id] || 'Ungrouped';
-    const trend = getTrend(resource.recentChecks || []);
+    const trend = getTrend(checks);
+    const isSelected = selectedIds.has(resource.id);
 
     return (
       <div
         key={resource.id}
-        className="resource-row"
-        onClick={(e) => !e.target.closest('.row-actions') && navigate(`/resource/${resource.id}`)}
+        className={`resource-row${isSelected ? ' resource-row-selected' : ''}`}
+        onClick={(e) => !e.target.closest('.row-actions') && !e.target.closest('.row-checkbox') && navigate(`/resource/${resource.id}`)}
       >
+        <label className="row-checkbox" onClick={(e) => e.stopPropagation()} title="Select for bulk actions">
+          <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(resource.id)} />
+        </label>
+
         <div className="row-main">
           <div className="row-title-line">
             <h3 className="resource-name row-name">{resource.name}</h3>
@@ -388,12 +441,16 @@ function Dashboard() {
             <p className="stat-label">Avg Resp</p>
           </div>
           <div className="row-sparkline">
-            {sparkData.length > 1 ? (
-              <ResponsiveContainer width="100%" height={44}>
-                <LineChart data={sparkData} margin={{ top: 2, bottom: 0, left: 0, right: 0 }}>
-                  <Line type="monotone" dataKey="responseTime" stroke="#14b8a6" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+            {checks.length > 0 ? (
+              <div className="status-spark-bars" title="Recent check status (newest on right)">
+                {checks.map((c, i) => (
+                  <div
+                    key={i}
+                    className={`spark-bar spark-bar-${c.status || 'unknown'}`}
+                    title={`${c.status}${c.response_time ? ` — ${c.response_time}ms` : ''}`}
+                  />
+                ))}
+              </div>
             ) : (
               <span className="last-check">No recent data</span>
             )}
@@ -542,9 +599,30 @@ function Dashboard() {
           <p>Try adjusting your tag/group filters</p>
         </div>
       ) : (
+        <>
+        {selectedIds.size > 0 && (
+          <div className="bulk-action-bar">
+            <span className="bulk-count">{selectedIds.size} selected</span>
+            <button className="btn btn-secondary" onClick={() => handleBulkMaintenance(true)}>Enable Maintenance</button>
+            <button className="btn btn-secondary" onClick={() => handleBulkMaintenance(false)}>End Maintenance</button>
+            <button className="btn btn-danger" onClick={handleBulkDelete}>Delete Selected</button>
+            <button className="btn" onClick={() => setSelectedIds(new Set())}>Clear</button>
+          </div>
+        )}
+
+        <datalist id="tag-suggestions">
+          {allTags.map(tag => <option key={tag} value={tag} />)}
+        </datalist>
+
         <div className="cc-layout">
           <section className="resource-list-shell cc-main">
             <div className="resource-list-header">
+              <label className="header-select-all" title="Select / deselect all visible">
+                <input type="checkbox"
+                  checked={visibleResources.length > 0 && selectedIds.size === visibleResources.length}
+                  onChange={toggleSelectAll}
+                />
+              </label>
               <div>Resource</div>
               <div>Metrics</div>
               <div>Status</div>
@@ -566,10 +644,19 @@ function Dashboard() {
               ) : (
                 <div className="cc-incident-list">
                   {activeIncidents.map((incident) => (
-                    <button key={incident.id} className="cc-incident-item" onClick={() => navigate(`/resource/${incident.id}`)}>
-                      <span className="cc-incident-name">{incident.name}</span>
-                      <span className={`status-badge status-${incident.status}`}>{incident.status}</span>
-                    </button>
+                    <div key={incident.id} className="cc-incident-item">
+                      <button className="cc-incident-nav" onClick={() => navigate(`/resource/${incident.id}`)}>
+                        <span className="cc-incident-name">{incident.name}</span>
+                        <span className={`status-badge status-${incident.status}`}>{incident.status}</span>
+                      </button>
+                      {incident.activeIncidentId && (
+                        <button
+                          className="btn-icon cc-ack-btn"
+                          title="Acknowledge incident"
+                          onClick={(e) => { e.stopPropagation(); handleAcknowledge(incident.activeIncidentId); }}
+                        >✓</button>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
@@ -594,6 +681,7 @@ function Dashboard() {
             </div>
           </aside>
         </div>
+        </>
       )}
 
       {showGroupModal && (
@@ -726,7 +814,7 @@ function Dashboard() {
 
               <div className="form-group">
                 <label>Tags (comma-separated)</label>
-                <input type="text" placeholder="frontend,production,critical" value={formData.tags || ''} onChange={(e) => setFormData({ ...formData, tags: e.target.value })} />
+                <input type="text" list="tag-suggestions" placeholder="frontend,production,critical" value={formData.tags || ''} onChange={(e) => setFormData({ ...formData, tags: e.target.value })} />
               </div>
 
               <div className="form-row">
@@ -870,7 +958,7 @@ function Dashboard() {
 
               <div className="form-group">
                 <label>Tags (comma-separated)</label>
-                <input type="text" placeholder="Enter tags to organize resources" value={editData.tags || ''} onChange={(e) => setEditData({ ...editData, tags: e.target.value })} />
+                <input type="text" list="tag-suggestions" placeholder="Enter tags to organize resources" value={editData.tags || ''} onChange={(e) => setEditData({ ...editData, tags: e.target.value })} />
               </div>
 
               <div className="form-row">

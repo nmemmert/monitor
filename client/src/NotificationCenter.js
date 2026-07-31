@@ -10,6 +10,9 @@ function NotificationCenter() {
   const [filter, setFilter] = useState('all'); // all, unread, read
   const [loading, setLoading] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+  const [pushPermission, setPushPermission] = useState(
+    'Notification' in window ? Notification.permission : 'unsupported'
+  );
 
   useEffect(() => {
     loadNotifications();
@@ -41,8 +44,11 @@ function NotificationCenter() {
         try {
           const message = JSON.parse(event.data);
           if (message.type === 'notification') {
-            // New notification received - reload notifications
             loadNotifications();
+            if ('Notification' in window && Notification.permission === 'granted' && !document.hasFocus()) {
+              const n = message.data || {};
+              new Notification(n.title || 'SkyWatch Alert', { body: n.message || '', icon: '/favicon.ico' });
+            }
           }
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error);
@@ -101,6 +107,12 @@ function NotificationCenter() {
     } catch (error) {
       console.error('Failed to delete notification:', error);
     }
+  };
+
+  const handleRequestPush = async () => {
+    if (!('Notification' in window)) return;
+    const perm = await Notification.requestPermission();
+    setPushPermission(perm);
   };
 
   const handleClearAll = async () => {
@@ -172,6 +184,14 @@ function NotificationCenter() {
               </button>
             )}
           </div>
+
+          {pushPermission !== 'granted' && pushPermission !== 'unsupported' && (
+            <div className="push-prompt">
+              <button className="filter-btn" onClick={handleRequestPush}>
+                {pushPermission === 'denied' ? '🔕 Push blocked' : '🔔 Enable push alerts'}
+              </button>
+            </div>
+          )}
 
           <div className="notification-list">
             {loading ? (

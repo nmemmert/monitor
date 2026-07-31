@@ -1,3 +1,53 @@
+/* ── Theme variables ── */
+:root {
+  --app-bg: #020617;
+  --surface: #0f172a;
+  --surface-2: #1e293b;
+  --border: #334155;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --accent: #14b8a6;
+}
+
+[data-theme="light"] {
+  --app-bg: #f8fafc;
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --border: #e2e8f0;
+  --text: #1e293b;
+  --text-muted: #475569;
+  --text-dim: #94a3b8;
+  --accent: #0d9488;
+}
+
+[data-theme="light"] .App {
+  background: var(--app-bg);
+}
+
+[data-theme="light"] .navbar {
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+[data-theme="light"] .nav-link {
+  color: #475569;
+}
+
+[data-theme="light"] .nav-link:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+  box-shadow: inset 0 0 0 1px #e2e8f0;
+}
+
+[data-theme="light"] .container,
+[data-theme="light"] .detail-section,
+[data-theme="light"] .resource-row {
+  background: var(--surface);
+  color: var(--text);
+}
+
 .App {
   min-height: 100vh;
   background:
@@ -310,7 +360,44 @@
   gap: 0.4rem;
 }
 
-.cc-incident-item,
+.cc-incident-item {
+  width: 100%;
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 0.2rem 0.35rem 0.2rem 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cc-incident-item:hover {
+  background: #111f34;
+  border-color: #475569;
+}
+
+.cc-incident-nav {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #e2e8f0;
+  padding: 0.25rem 0.55rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cc-ack-btn {
+  flex-shrink: 0;
+  color: #4ade80;
+  font-size: 0.95rem;
+  padding: 0.2rem 0.4rem;
+  margin-right: 0.25rem;
+}
+
 .cc-group-item {
   width: 100%;
   background: #0f172a;
@@ -324,7 +411,6 @@
   cursor: pointer;
 }
 
-.cc-incident-item:hover,
 .cc-group-item:hover {
   background: #111f34;
   border-color: #475569;
@@ -363,7 +449,7 @@
 
 .resource-list-header {
   display: grid;
-  grid-template-columns: minmax(260px, 2fr) minmax(220px, 1.25fr) minmax(170px, 0.8fr);
+  grid-template-columns: 28px minmax(260px, 2fr) minmax(220px, 1.25fr) minmax(170px, 0.8fr);
   gap: 1rem;
   padding: 0.35rem 0.6rem 0.6rem;
   font-size: 0.72rem;
@@ -391,7 +477,7 @@
 
 .resource-row {
   display: grid;
-  grid-template-columns: minmax(260px, 2fr) minmax(220px, 1.25fr) minmax(170px, 0.8fr);
+  grid-template-columns: 28px minmax(260px, 2fr) minmax(220px, 1.25fr) minmax(170px, 0.8fr);
   align-items: center;
   gap: 1rem;
   padding: 0.65rem 0.8rem;
@@ -1255,6 +1341,10 @@
     display: none;
   }
 
+  .row-checkbox {
+    display: none;
+  }
+
   .row-metrics {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -1393,4 +1483,136 @@
   .row-metrics {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+/* ── Bulk action bar ── */
+.bulk-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.bulk-count {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  margin-right: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* ── Row checkbox ── */
+.row-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.row-checkbox input[type="checkbox"],
+.header-select-all input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: #14b8a6;
+  cursor: pointer;
+}
+
+.header-select-all {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.resource-row-selected {
+  border-color: #14b8a6 !important;
+  background: rgba(20, 184, 166, 0.06) !important;
+}
+
+/* ── Status sparkline bars ── */
+.status-spark-bars {
+  display: flex;
+  gap: 2px;
+  align-items: stretch;
+  height: 40px;
+  width: 100%;
+}
+
+.spark-bar {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 1px;
+  transition: opacity 0.15s;
+}
+
+.spark-bar:hover { opacity: 0.65; }
+.spark-bar-up      { background: #14b8a6; }
+.spark-bar-down    { background: #ef4444; }
+.spark-bar-unknown { background: #475569; }
+
+/* ── Chart time-range buttons ── */
+.chart-range-btns {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.chart-range-btn {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  border-radius: 5px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chart-range-btn:hover {
+  border-color: #14b8a6;
+  color: #14b8a6;
+}
+
+.chart-range-btn.active {
+  background: #14b8a6;
+  border-color: #14b8a6;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+/* ── Check row expansion ── */
+.check-row-expandable {
+  cursor: pointer;
+}
+
+.check-row-expandable:hover {
+  background: rgba(20, 184, 166, 0.05);
+}
+
+.detail-json {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  background: #0a0f1a;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Section title row ── */
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.section-title-row h2 {
+  margin: 0;
 }

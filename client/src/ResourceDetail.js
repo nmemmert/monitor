@@ -29,6 +29,9 @@ function ResourceDetail() {
   const [editingIncident, setEditingIncident] = useState(null);
   const [incidentDescription, setIncidentDescription] = useState('');
   const [updatingIncident, setUpdatingIncident] = useState(false);
+  const [expandedCheckId, setExpandedCheckId] = useState(null);
+  const [chartRange, setChartRange] = useState('24h');
+  const [chartChecks, setChartChecks] = useState([]);
 
   const [sla, setSla] = useState(null);
   const [slaLoading, setSlaLoading] = useState(false);
@@ -51,10 +54,16 @@ function ResourceDetail() {
     loadIncidents();
     loadSla();
     loadMaintenanceWindows();
+    loadChartChecks();
     const interval = setInterval(loadResource, 5000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    loadChartChecks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartRange]);
 
   useEffect(() => {
     loadChecks();
@@ -101,6 +110,29 @@ function ResourceDetail() {
       // Incidents load error handled
     } finally {
       setIncidentsLoading(false);
+    }
+  };
+
+  const rangeMs = { '1h': 3600000, '6h': 21600000, '24h': 86400000, '7d': 604800000 };
+
+  const loadChartChecks = async () => {
+    try {
+      const from = new Date(Date.now() - rangeMs[chartRange]).toISOString();
+      const resp = await axios.get(`/api/resources/${id}/checks`, {
+        params: { from, limit: 200, sort: 'asc' },
+      });
+      setChartChecks(resp.data.checks || []);
+    } catch (error) {
+      // chart load error handled
+    }
+  };
+
+  const handleAcknowledge = async (incidentId) => {
+    try {
+      await axios.post(`/api/incidents/${incidentId}/acknowledge`);
+      loadIncidents();
+    } catch (error) {
+      showNotification('Error', 'Failed to acknowledge incident', 'error');
     }
   };
 
@@ -214,7 +246,7 @@ function ResourceDetail() {
     </div>
   );
 
-  const chartData = resource.stats.checks.map((check) => ({
+  const chartData = chartChecks.map((check) => ({
     time: formatChartTime(check.checked_at),
     responseTime: check.response_time,
     status: check.status === 'up' ? 1 : 0,
@@ -274,7 +306,14 @@ function ResourceDetail() {
       </div>
 
       <div className="detail-section">
-        <h2>Response Time (Last 50 Checks)</h2>
+        <div className="section-title-row">
+          <h2>Response Time</h2>
+          <div className="chart-range-btns">
+            {['1h', '6h', '24h', '7d'].map(r => (
+              <button key={r} className={`chart-range-btn${chartRange === r ? ' active' : ''}`} onClick={() => setChartRange(r)}>{r}</button>
+            ))}
+          </div>
+        </div>
         <div className="chart-container">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
@@ -325,14 +364,37 @@ function ResourceDetail() {
                 <tr><td colSpan="4">Loading checks...</td></tr>
               ) : checks.length === 0 ? (
                 <tr><td colSpan="4">No checks found</td></tr>
-              ) : checks.map((check) => (
-                <tr key={check.id}>
-                  <td>{formatLocalTime(check.checked_at)}</td>
-                  <td><span className={`status-badge status-${check.status}`}>{check.status}</span></td>
-                  <td className="text-right">{check.response_time ? `${check.response_time}ms` : '-'}</td>
-                  <td className="muted-cell">{check.error_message || 'OK'}</td>
-                </tr>
-              ))}
+              ) : checks.map((check) => {
+                const isExpanded = expandedCheckId === check.id;
+                let parsedDetails = null;
+                if (check.details) {
+                  try { parsedDetails = JSON.parse(check.details); } catch {}
+                }
+                return (
+                  <React.Fragment key={check.id}>
+                    <tr
+                      className={`check-row${parsedDetails ? ' check-row-expandable' : ''}`}
+                      onClick={() => parsedDetails && setExpandedCheckId(isExpanded ? null : check.id)}
+                      title={parsedDetails ? 'Click to expand details' : undefined}
+                    >
+                      <td>{formatLocalTime(check.checked_at)}</td>
+                      <td><span className={`status-badge status-${check.status}`}>{check.status}</span></td>
+                      <td className="text-right">{check.response_time ? `${check.response_time}ms` : '-'}</td>
+                      <td className="muted-cell">
+                        {check.error_message || 'OK'}
+                        {parsedDetails && <span className="expand-indicator">{isExpanded ? ' ▼' : ' ▶'}</span>}
+                      </td>
+                    </tr>
+                    {isExpanded && parsedDetails && (
+                      <tr className="expanded-row">
+                        <td colSpan="4" className="expanded-cell">
+                          <pre className="detail-json">{JSON.stringify(parsedDetails, null, 2)}</pre>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -364,7 +426,7 @@ function ResourceDetail() {
         <div className="table-wrapper">
           <table className="data-table">
             <thead>
-              <tr><th className="w-25">Started</th><th className="w-25">Resolved</th><th className="w-15">Duration</th><th className="w-35">Reason</th></tr>
+              <tr><th className="w-20">Started</th><th className="w-20">Resolved</th><th className="w-15">Duration</th><th className="w-35">Reason</th><th className="w-10"></th></tr>
             </thead>
             <tbody>
               {incidentsLoading ? (
@@ -393,10 +455,19 @@ function ResourceDetail() {
                         </span>
                         <button className="btn btn-secondary btn-compact" onClick={() => handleEditIncident(incident)}>Edit</button>
                       </td>
+                      <td>
+                        {!incident.resolved_at && (
+                          <button
+                            className="btn btn-secondary btn-compact"
+                            title="Acknowledge — mark as seen"
+                            onClick={() => handleAcknowledge(incident.id)}
+                          >Ack</button>
+                        )}
+                      </td>
                     </tr>
                     {isExpanded && (
                       <tr className="expanded-row">
-                        <td colSpan="4" className="expanded-cell">{description}</td>
+                        <td colSpan="5" className="expanded-cell">{description}</td>
                       </tr>
                     )}
                   </React.Fragment>

@@ -125,6 +125,19 @@ function Status() {
               return m.resource_id === resource.id && now >= start && now <= end;
             });
 
+            const daily = resource.dailyUptime || [];
+            const last90Days = (() => {
+              const days = [];
+              for (let i = 89; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const key = d.toISOString().slice(0, 10);
+                const entry = daily.find(e => e.day === key);
+                days.push({ day: key, uptime: entry ? entry.uptime : null });
+              }
+              return days;
+            })();
+
             return (
               <div
                 key={resource.id}
@@ -144,6 +157,28 @@ function Status() {
                     </a>
                   </p>
                 )}
+
+                <div className="uptime-history" title="90-day uptime — hover for details">
+                  {last90Days.map((d) => {
+                    const color = d.uptime === null ? '#334155'
+                      : d.uptime >= 99 ? '#14b8a6'
+                      : d.uptime >= 95 ? '#f59e0b'
+                      : '#ef4444';
+                    return (
+                      <div
+                        key={d.day}
+                        className="uptime-day-bar"
+                        style={{ background: color }}
+                        title={d.uptime !== null ? `${d.day}: ${d.uptime}%` : `${d.day}: no data`}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="uptime-history-labels">
+                  <span>90 days ago</span>
+                  <span>{daily.length > 0 ? `${daily[daily.length - 1]?.uptime ?? '—'}% today` : ''}</span>
+                  <span>Today</span>
+                </div>
 
                 {activeIncident && (
                   <div className="incident-info">
