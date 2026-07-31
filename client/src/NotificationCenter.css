@@ -25,134 +25,157 @@
   position: absolute;
   top: 0;
   right: 0;
-  background: #dc3545;
-  color: white;
+  background: #ef4444;
+  color: #fff;
   border-radius: 50%;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.2rem;
+  height: 1.2rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.65rem;
-  font-weight: bold;
+  font-size: 0.6rem;
+  font-weight: 700;
   line-height: 1;
 }
 
+/* ── Panel ── */
 .notification-popup {
   position: fixed;
   top: 60px;
   right: 20px;
-  width: 400px;
+  width: 420px;
   max-height: 600px;
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   z-index: 1000;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
+/* ── Header ── */
 .notification-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid #eee;
-  background: #f9f9f9;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #334155;
+  background: #0f172a;
 }
 
 .notification-header h3 {
   margin: 0;
-  font-size: 1.1rem;
-  color: #333;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  letter-spacing: 0.01em;
 }
 
 .close-btn {
   background: none;
   border: none;
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   cursor: pointer;
-  color: #999;
+  color: #64748b;
   padding: 0;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
 }
 
 .close-btn:hover {
-  color: #333;
+  color: #e2e8f0;
+  background: #334155;
 }
 
+/* ── Filters ── */
 .notification-filters {
   display: flex;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #eee;
-  background: #fafafa;
+  gap: 0.4rem;
+  padding: 0.6rem 0.875rem;
+  border-bottom: 1px solid #334155;
+  background: #1e293b;
   flex-wrap: wrap;
 }
 
 .filter-btn {
-  padding: 0.4rem 0.75rem;
-  border: 1px solid #ddd;
-  background: white;
-  border-radius: 4px;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid #334155;
+  background: transparent;
+  color: #94a3b8;
+  border-radius: 5px;
   cursor: pointer;
-  font-size: 0.85rem;
-  transition: all 0.2s;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all 0.15s;
 }
 
 .filter-btn:hover {
-  border-color: #007bff;
-  color: #007bff;
+  border-color: #14b8a6;
+  color: #14b8a6;
 }
 
 .filter-btn.active {
-  background: #007bff;
-  color: white;
-  border-color: #007bff;
+  background: #14b8a6;
+  color: #0f172a;
+  border-color: #14b8a6;
+  font-weight: 600;
 }
 
 .clear-btn {
   margin-left: auto;
-  background: #dc3545;
-  color: white;
-  border-color: #dc3545;
+  background: transparent;
+  color: #f87171;
+  border-color: #f87171;
 }
 
 .clear-btn:hover {
-  background: #c82333;
-  border-color: #c82333;
+  background: #f87171;
+  color: #0f172a;
+  border-color: #f87171;
 }
 
+/* ── List ── */
 .notification-list {
   flex: 1;
   overflow-y: auto;
-  max-height: 450px;
+  max-height: 460px;
 }
 
 .notification-item {
-  padding: 1rem;
-  border-bottom: 1px solid #eee;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #1e293b;
   display: flex;
   gap: 0.75rem;
-  background: white;
-  transition: background 0.2s;
+  background: #1e293b;
+  transition: background 0.15s;
+  cursor: default;
+}
+
+.notification-item:last-child {
+  border-bottom: none;
 }
 
 .notification-item:hover {
-  background: #f9f9f9;
+  background: #263347;
 }
 
 .notification-item.unread {
-  background: #f0f8ff;
-  font-weight: 500;
+  background: #162032;
+  border-left: 3px solid #14b8a6;
 }
 
+.notification-item.unread:hover {
+  background: #1c2a40;
+}
+
+/* ── Content ── */
 .notification-content {
   flex: 1;
   min-width: 0;
@@ -160,84 +183,101 @@
 
 .notification-title {
   font-weight: 600;
-  margin-bottom: 0.25rem;
-  font-size: 0.95rem;
-  color: #333;
+  margin-bottom: 0.3rem;
+  font-size: 0.875rem;
+  color: #f1f5f9;
+  line-height: 1.3;
 }
 
 .notification-message {
-  font-size: 0.85rem;
-  color: #666;
+  font-size: 0.8rem;
+  color: #94a3b8;
   margin-bottom: 0.5rem;
   word-break: break-word;
+  line-height: 1.45;
 }
 
 .notification-meta {
   display: flex;
-  gap: 0.75rem;
-  font-size: 0.75rem;
-  color: #999;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  color: #64748b;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .notification-resource {
-  background: #f0f0f0;
-  padding: 0.2rem 0.5rem;
+  background: #0f172a;
+  color: #94a3b8;
+  padding: 0.15rem 0.45rem;
   border-radius: 3px;
+  border: 1px solid #334155;
+  font-size: 0.7rem;
 }
 
 .notification-time {
   white-space: nowrap;
 }
 
+/* ── Actions ── */
 .notification-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.25rem;
   align-items: flex-start;
+  flex-shrink: 0;
 }
 
 .action-btn {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 1rem;
-  padding: 0.25rem 0.5rem;
-  color: #999;
-  transition: color 0.2s;
-  flex-shrink: 0;
+  font-size: 0.9rem;
+  padding: 0.25rem 0.4rem;
+  color: #475569;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
 }
 
 .action-btn:hover {
-  color: #333;
+  background: #334155;
+  color: #e2e8f0;
 }
 
 .action-btn.mark-read:hover {
-  color: #28a745;
+  color: #4ade80;
 }
 
 .action-btn.delete:hover {
-  color: #dc3545;
+  color: #f87171;
 }
 
-/* Scrollbar styling */
+/* ── Empty state ── */
+.notification-empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: #475569;
+  font-size: 0.875rem;
+}
+
+/* ── Scrollbar ── */
 .notification-list::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 .notification-list::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #0f172a;
 }
 
 .notification-list::-webkit-scrollbar-thumb {
-  background: #888;
+  background: #334155;
   border-radius: 3px;
 }
 
 .notification-list::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: #475569;
 }
 
-/* Mobile responsive */
+/* ── Mobile ── */
 @media (max-width: 600px) {
   .notification-popup {
     position: fixed;
