@@ -373,7 +373,7 @@ function Dashboard() {
     ? (sortedResources.reduce((sum, r) => sum + parseFloat(r.uptime || 0), 0) / totalCount).toFixed(2)
     : '0.00';
   const avgResponse = totalCount
-    ? Math.round(sortedResources.reduce((sum, r) => sum + parseInt(r.avgResponseTime || 0, 10), 0) / totalCount)
+    ? Math.round(sortedResources.reduce((sum, r) => sum + (parseInt(r.avgResponseTime || 0, 10) || 0), 0) / totalCount)
     : 0;
 
   const activeIncidents = sortedResources.filter((r) => r.hasActiveIncident || r.status === 'down').slice(0, 8);
@@ -412,8 +412,8 @@ function Dashboard() {
           <div className="row-title-line">
             <h3 className="resource-name row-name">{resource.name}</h3>
             <span className="resource-group-pill">{groupName}</span>
-            {resource.hasActiveIncident && <span className="incident-inline">active incident</span>}
-            {resource.maintenance_mode && <span className="maintenance-inline">🛠 maintenance</span>}
+            {!!resource.hasActiveIncident && <span className="incident-inline">active incident</span>}
+            {!!resource.maintenance_mode && <span className="maintenance-inline">🛠 maintenance</span>}
             {resource.type === 'tls' && resource.certDaysRemaining !== null && resource.certDaysRemaining <= 30 && (
               <span
                 className="maintenance-inline"
@@ -435,7 +435,7 @@ function Dashboard() {
           </div>
           <div>
             <p className="stat-value small">
-              {resource.avgResponseTime}ms
+              {isNaN(parseInt(resource.avgResponseTime, 10)) ? '—' : `${resource.avgResponseTime}ms`}
               <span className={`trend-chip trend-${trend}`}>{trend === 'better' ? '↓' : trend === 'worse' ? '↑' : '→'}</span>
             </p>
             <p className="stat-label">Avg Resp</p>
