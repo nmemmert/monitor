@@ -112,10 +112,19 @@ export const getTimezoneInfo = () => {
   const tz = getCurrentTimezone();
   const now = new Date();
   const tzDisplay = now.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop();
-  
+
   return {
     timezone: tz,
     abbreviation: tzDisplay,
     offset: now.getTimezoneOffset()
   };
 };
+
+export function formatDuration(ms) {
+  if (!ms || ms < 0) return '0m';
+  const minutes = Math.floor(ms / 60000);
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}

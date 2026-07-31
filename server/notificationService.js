@@ -149,6 +149,99 @@ class NotificationService {
     }
   }
 
+  async flushAlerts(pendingAlerts) {
+    if (pendingAlerts.length === 0) return;
+    if (pendingAlerts.length === 1) {
+      const { resource, incident, stats } = pendingAlerts[0];
+      await this.sendAlert(resource, incident, stats);
+      return;
+    }
+    // Multiple alerts in one check cycle — save individual in-app entries but send one grouped email/webhook
+    for (const { resource, incident } of pendingAlerts) {
+      const status = incident.type === 'started' ? 'down' : 'up';
+      const message = `${resource.name} is ${status.toUpperCase()}. URL: ${resource.url}`;
+      this.saveNotification(resource, incident, status, message);
+    }
+    await this.sendGroupedEmail(pendingAlerts);
+    if (this.webhookEnabled) {
+      await this.sendGroupedWebhook(pendingAlerts);
+    }
+  }
+
+  async sendGroupedEmail(alerts) {
+    if (!this.transporter) return;
+    const targetEmail = this.config.email_to;
+    if (!targetEmail || !this.emailEnabled) return;
+    try {
+      const rows = alerts.map(({ resource, incident }) => {
+        const status = incident.type === 'started' ? 'DOWN' : 'UP';
+        const emoji = incident.type === 'started' ? '🔴' : '🟢';
+        return `<li>${emoji} <strong>${resource.name}</strong> is ${status} — ${resource.url}</li>`;
+      }).join('');
+      await this.transporter.sendMail({
+        from: this.config.email_from,
+        to: targetEmail,
+        subject: `⚠️ ${alerts.length} monitors changed status`,
+        text: alerts.map(({ resource, incident }) =>
+          `${resource.name} is ${incident.type === 'started' ? 'DOWN' : 'UP'} — ${resource.url}`
+        ).join('\n'),
+        html: `<div style="font-family:Arial,sans-serif;max-width:600px">
+          <h2 style="color:#d32f2f">⚠️ ${alerts.length} Monitors Changed Status</h2>
+          <ul>${rows}</ul>
+          <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+        </div>`,
+      });
+    } catch (error) {
+      // Grouped email error handled
+    }
+  }
+
+  async sendGroupedWebhook(alerts) {
+    const webhookUrl = this.config.webhook_url || process.env.WEBHOOK_URL;
+    if (!webhookUrl) return;
+    try {
+      await axios.post(webhookUrl, {
+        type: 'grouped_alert',
+        count: alerts.length,
+        resources: alerts.map(({ resource, incident }) => ({
+          name: resource.name,
+          url: resource.url,
+          status: incident.type === 'started' ? 'down' : 'up',
+        })),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      // Grouped webhook error handled
+    }
+  }
+
+  async sendEscalationAlert(incident, fallbackWebhookUrl) {
+    try {
+      const durationMin = Math.round((Date.now() - new Date(incident.started_at).getTime()) / 60000);
+      const message = `⚠️ ESCALATION: ${incident.resource_name} has been DOWN for ${durationMin} minutes without resolution.`;
+      if (fallbackWebhookUrl) {
+        await axios.post(fallbackWebhookUrl, {
+          resource: incident.resource_name,
+          url: incident.resource_url,
+          status: 'escalated',
+          duration_minutes: durationMin,
+          incident_id: incident.id,
+          started_at: incident.started_at,
+          message,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      this.saveNotification(
+        { id: incident.resource_id, name: incident.resource_name, url: incident.resource_url },
+        { id: incident.id },
+        'escalated',
+        message
+      );
+    } catch (error) {
+      // Escalation alert error handled
+    }
+  }
+
   isQuietHours(resource) {
     if (!resource.quiet_hours_start || !resource.quiet_hours_end) {
       return false;

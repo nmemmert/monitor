@@ -145,15 +145,26 @@ class MonitorService {
             }
           }
 
-          const isHttps = resource.url.startsWith('https');
-          const response = await axios.get(resource.url, {
+          const method = (resource.http_method || 'GET').toUpperCase();
+          const requestConfig = {
+            method,
+            url: resource.url,
             timeout: resource.timeout,
             validateStatus: () => true,
             maxRedirects: 5,
             headers,
             httpAgent: this.httpAgent,
             httpsAgent: this.httpsAgent,
-          });
+          };
+          if (resource.http_body && ['POST', 'PUT', 'PATCH'].includes(method)) {
+            try {
+              requestConfig.data = JSON.parse(resource.http_body);
+              if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+            } catch {
+              requestConfig.data = resource.http_body;
+            }
+          }
+          const response = await axios(requestConfig);
           const responseTime = Date.now() - startTime;
           const isUp = response.status >= 200 && response.status < 400;
           

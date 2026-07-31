@@ -24,30 +24,30 @@ class Scheduler {
       }
     });
 
-    // Archive old checks daily at 2 AM
+    // Archive old checks + update baselines + check escalations daily at 2 AM
     cron.schedule('0 2 * * *', () => {
       this.archiveOldChecks();
+      this.updateBaselines();
+    });
+
+    // Escalation check runs every hour
+    cron.schedule('0 * * * *', async () => {
+      await this.checkEscalations();
     });
 
     // Also run archive on startup (with delay to let DB init)
     setTimeout(() => {
       this.archiveOldChecks();
+      this.updateBaselines();
     }, 5000);
   }
 
   archiveOldChecks() {
     try {
-      // Get global retention setting
-      const retentionSetting = db.prepare(`
-        SELECT value FROM settings WHERE key = 'retention_days'
-      `).get();
-      
+      const retentionSetting = db.prepare(`SELECT value FROM settings WHERE key = 'retention_days'`).get();
       const globalRetentionDays = retentionSetting ? parseInt(retentionSetting.value) : 30;
 
-      // Get all resources with their retention settings
-      const resources = db.prepare(`
-        SELECT id, retention_days FROM resources
-      `).all();
+      const resources = db.prepare(`SELECT id, retention_days FROM resources`).all();
 
       const bulkArchive = db.prepare(`
         INSERT INTO archived_checks (resource_id, status, response_time, status_code, error_message, details, checked_at)
@@ -73,16 +73,60 @@ class Scheduler {
     }
   }
 
-  async runChecks() {
-    const resources = db.prepare(`
-      SELECT * FROM resources WHERE enabled = 1
-    `).all();
+  updateBaselines() {
+    try {
+      const resources = db.prepare(`SELECT id, type FROM resources WHERE type != 'heartbeat'`).all();
+      for (const resource of resources) {
+        const baseline = monitorService.calculateResponseTimeBaseline(resource.id, 7);
+        if (baseline !== null) {
+          db.prepare(`UPDATE resources SET response_time_baseline = ? WHERE id = ?`).run(baseline, resource.id);
+        }
+      }
+    } catch (error) {
+      // Baseline update error handled silently
+    }
+  }
 
-    // Stagger checks to avoid thundering herd
+  async checkEscalations() {
+    try {
+      const escalationSetting = db.prepare(`SELECT value FROM settings WHERE key = 'escalation_hours'`).get();
+      const escalationHours = parseInt(escalationSetting?.value || '4');
+      const fallbackSetting = db.prepare(`SELECT value FROM settings WHERE key = 'fallback_webhook'`).get();
+      const fallbackWebhook = fallbackSetting?.value || process.env.FALLBACK_WEBHOOK || '';
+
+      if (!fallbackWebhook) return;
+
+      const cutoff = new Date(Date.now() - escalationHours * 60 * 60 * 1000)
+        .toISOString().replace('T', ' ').split('.')[0];
+
+      const stalled = db.prepare(`
+        SELECT i.*, r.name AS resource_name, r.url AS resource_url, r.type AS resource_type,
+               r.maintenance_mode
+        FROM incidents i
+        JOIN resources r ON r.id = i.resource_id
+        WHERE i.resolved_at IS NULL AND i.escalated = 0 AND i.started_at < ?
+          AND r.maintenance_mode = 0
+      `).all(cutoff);
+
+      for (const incident of stalled) {
+        await notificationService.sendEscalationAlert(incident, fallbackWebhook);
+        db.prepare(`UPDATE incidents SET escalated = 1 WHERE id = ?`).run(incident.id);
+      }
+    } catch (error) {
+      // Escalation check error handled silently
+    }
+  }
+
+  async runChecks() {
+    const resources = db.prepare(`SELECT * FROM resources WHERE enabled = 1`).all();
+
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const jitter = (maxMs = 1500) => Math.floor(Math.random() * maxMs);
+    const baseSpacingMs = 250;
 
-    const baseSpacingMs = 250; // spread starts in 250ms increments
+    // Collect incident alerts to flush as a group after all checks complete
+    const pendingAlerts = [];
+
     const tasks = resources.map((resource, index) => (async () => {
       // Honour per-resource check_interval — skip if not yet due
       const now = Date.now();
@@ -115,30 +159,27 @@ class Scheduler {
           // Non-fatal
         }
 
-        const incident = monitorService.handleIncident(
-          resource.id,
-          result.status === 'down'
-        );
+        const incident = monitorService.handleIncident(resource.id, result.status === 'down');
 
-        if (incident.type !== 'none') {
+        if (incident.type !== 'none' && !resource.maintenance_mode) {
           const stats = monitorService.getResourceStats(resource.id, 24);
           const recentChecks = db.prepare(`
             SELECT response_time, status FROM checks
             WHERE resource_id = ?
-            ORDER BY checked_at DESC
-            LIMIT 12
+            ORDER BY checked_at DESC LIMIT 12
           `).all(resource.id);
           stats.recentChecks = recentChecks.reverse();
-          if (!resource.maintenance_mode) {
-            await notificationService.sendAlert(resource, incident, stats);
-          }
+          pendingAlerts.push({ resource, incident, stats });
         }
 
-        // Response time threshold alert (only when up, with 1-hour cooldown)
+        // Slow alert: prefer explicit threshold, fall back to 2× computed baseline
+        const effectiveThreshold = resource.response_time_threshold ||
+          (resource.response_time_baseline ? resource.response_time_baseline * 2 : null);
+
         if (
           result.status === 'up' &&
-          resource.response_time_threshold &&
-          result.response_time > resource.response_time_threshold &&
+          effectiveThreshold &&
+          result.response_time > effectiveThreshold &&
           !resource.maintenance_mode
         ) {
           const lastSlowAlert = this.slowAlertCooldown.get(resource.id) || 0;
@@ -147,7 +188,7 @@ class Scheduler {
             await notificationService.sendAlert(resource, {
               type: 'slow',
               responseTime: result.response_time,
-              threshold: resource.response_time_threshold,
+              threshold: effectiveThreshold,
               id: null,
             });
           }
@@ -159,6 +200,9 @@ class Scheduler {
 
     await Promise.allSettled(tasks);
 
+    // Flush collected alerts — grouped if multiple fired in the same cycle
+    await notificationService.flushAlerts(pendingAlerts);
+
     // Broadcast updated dashboard to all connected WebSocket clients
     if (global.broadcastDashboardUpdate) {
       global.broadcastDashboardUpdate();
@@ -166,7 +210,6 @@ class Scheduler {
   }
 
   stop() {
-    // Stop the scheduler (cron tasks will continue running but we flag isRunning)
     this.isRunning = false;
   }
 }

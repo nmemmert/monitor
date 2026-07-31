@@ -311,6 +311,13 @@ try {
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('incident_failure_threshold', '10')").run();
 } catch (err) {}
 
+// Feature: HTTP method + request body support
+try { db.prepare("ALTER TABLE resources ADD COLUMN http_method TEXT DEFAULT 'GET'").run(); } catch(e) {}
+try { db.prepare("ALTER TABLE resources ADD COLUMN http_body TEXT").run(); } catch(e) {}
+
+// Feature: alert escalation tracking
+try { db.prepare("ALTER TABLE incidents ADD COLUMN escalated INTEGER DEFAULT 0").run(); } catch(e) {}
+
 // Feature: heartbeat / cron-job monitoring
 try { db.prepare("ALTER TABLE resources ADD COLUMN heartbeat_token TEXT").run(); } catch(e) {}
 try { db.prepare("ALTER TABLE resources ADD COLUMN heartbeat_timeout INTEGER DEFAULT 300000").run(); } catch(e) {}

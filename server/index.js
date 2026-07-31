@@ -141,6 +141,24 @@ function buildSettingsFromDb(dbSettings = {}) {
   };
 }
 
+// Simple in-memory per-IP rate limiter (no external package needed)
+const _rlMap = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _rlMap) { if (now - v.start > 60000) _rlMap.delete(k); }
+}, 5 * 60 * 1000);
+function rateLimit(maxReqs, windowMs = 60000) {
+  return (req, res, next) => {
+    const key = `${req.path}:${req.ip}`;
+    const now = Date.now();
+    const e = _rlMap.get(key);
+    if (!e || now - e.start > windowMs) { _rlMap.set(key, { start: now, count: 1 }); return next(); }
+    e.count++;
+    if (e.count > maxReqs) return res.status(429).json({ error: 'Too many requests' });
+    next();
+  };
+}
+
 // Build dashboard payload (shared between HTTP route and WebSocket broadcast)
 function getDashboardPayload() {
   const resources = db.prepare('SELECT * FROM resources ORDER BY group_id, name').all();
@@ -194,6 +212,8 @@ function getDashboardPayload() {
       heartbeat_timeout: resource.heartbeat_timeout,
       consecutive_failures_threshold: resource.consecutive_failures_threshold,
       response_time_threshold: resource.response_time_threshold,
+      http_method: resource.http_method || 'GET',
+      http_body: resource.http_body || null,
       certDaysRemaining,
       status: lastCheck?.status || 'unknown',
       uptime: stats.uptime,
@@ -311,7 +331,7 @@ app.get('/api/resources/:id', (req, res) => {
 
 // Create resource
 app.post('/api/resources', (req, res) => {
-  const { name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold } = req.body;
+  const { name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold, http_method, http_body } = req.body;
 
   const validationError = validateResourceBody(req.body);
   if (validationError) return res.status(400).json({ error: validationError });
@@ -322,8 +342,8 @@ app.post('/api/resources', (req, res) => {
     const effectiveUrl = isHeartbeat ? `heartbeat://${name}` : url;
 
     const stmt = db.prepare(`
-      INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_token, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_token, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold, http_method, http_body)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -346,7 +366,9 @@ app.post('/api/resources', (req, res) => {
       token,
       heartbeat_timeout || 300000,
       consecutive_failures_threshold || 1,
-      response_time_threshold || null
+      response_time_threshold || null,
+      http_method || 'GET',
+      http_body || null
     );
 
     // Invalidate related cache entries
@@ -367,7 +389,7 @@ app.post('/api/resources', (req, res) => {
 
 // Update resource
 app.put('/api/resources/:id', (req, res) => {
-  const { name, url, type, check_interval, timeout, enabled, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold } = req.body;
+  const { name, url, type, check_interval, timeout, enabled, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold, http_method, http_body } = req.body;
 
   const validationError = validateResourceBody(req.body);
   if (validationError) return res.status(400).json({ error: validationError });
@@ -378,7 +400,7 @@ app.put('/api/resources/:id', (req, res) => {
 
   const stmt = db.prepare(`
     UPDATE resources
-    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?, http_keyword = ?, http_headers = ?, quiet_hours_start = ?, quiet_hours_end = ?, cert_expiry_days = ?, sla_target = ?, email_to = ?, maintenance_mode = ?, retention_days = ?, is_public = ?, heartbeat_timeout = ?, consecutive_failures_threshold = ?, response_time_threshold = ?
+    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?, http_keyword = ?, http_headers = ?, quiet_hours_start = ?, quiet_hours_end = ?, cert_expiry_days = ?, sla_target = ?, email_to = ?, maintenance_mode = ?, retention_days = ?, is_public = ?, heartbeat_timeout = ?, consecutive_failures_threshold = ?, response_time_threshold = ?, http_method = ?, http_body = ?
     WHERE id = ?
   `);
 
@@ -403,6 +425,8 @@ app.put('/api/resources/:id', (req, res) => {
     heartbeat_timeout || 300000,
     consecutive_failures_threshold || 1,
     response_time_threshold || null,
+    http_method || 'GET',
+    http_body || null,
     req.params.id
   );
 
@@ -1715,7 +1739,7 @@ app.get('/api/resources/:id/alert-rules', (req, res) => {
 });
 
 // Heartbeat ping endpoint — cron jobs POST here to signal they're alive
-app.post('/api/heartbeat/:token', (req, res) => {
+app.post('/api/heartbeat/:token', rateLimit(20), (req, res) => {
   const resource = db.prepare('SELECT id, name FROM resources WHERE heartbeat_token = ? AND enabled = 1').get(req.params.token);
   if (!resource) return res.status(404).json({ error: 'Unknown heartbeat token' });
 
@@ -1731,7 +1755,7 @@ app.post('/api/heartbeat/:token', (req, res) => {
 });
 
 // Public status page — only returns resources with is_public = 1
-app.get('/api/status-page', (req, res) => {
+app.get('/api/status-page', rateLimit(60), (req, res) => {
   try {
     const resources = db.prepare('SELECT * FROM resources WHERE is_public = 1 AND enabled = 1 ORDER BY name').all();
     const incidents = db.prepare(`
