@@ -135,7 +135,7 @@ function buildSettingsFromDb(dbSettings = {}) {
     default_sort: dbSettings.default_sort || process.env.DEFAULT_SORT || 'name',
     items_per_page: parseInt(dbSettings.items_per_page || process.env.ITEMS_PER_PAGE) || 20,
     refresh_interval: parseInt(dbSettings.refresh_interval || process.env.REFRESH_INTERVAL) || 5000,
-    theme: dbSettings.theme || process.env.THEME || 'light',
+    theme: dbSettings.theme || process.env.THEME || 'dark',
     incident_failure_threshold: parseInt(dbSettings.incident_failure_threshold || process.env.INCIDENT_FAILURE_THRESHOLD) || 10,
     webhook_template: dbSettings.webhook_template || process.env.WEBHOOK_TEMPLATE || '',
   };
@@ -747,7 +747,7 @@ ESCALATION_HOURS=${escalation_hours || 4}
 DEFAULT_SORT=${default_sort || 'name'}
 ITEMS_PER_PAGE=${items_per_page || 20}
 REFRESH_INTERVAL=${refresh_interval || 5000}
-THEME=${theme || 'light'}
+THEME=${theme || 'dark'}
 INCIDENT_FAILURE_THRESHOLD=${incident_failure_threshold || 10}
 WEBHOOK_TEMPLATE=${webhook_template || ''}
 `;
@@ -782,7 +782,7 @@ WEBHOOK_TEMPLATE=${webhook_template || ''}
     process.env.DEFAULT_SORT = default_sort || 'name';
     process.env.ITEMS_PER_PAGE = String(items_per_page || 20);
     process.env.REFRESH_INTERVAL = String(refresh_interval || 5000);
-    process.env.THEME = theme || 'light';
+    process.env.THEME = theme || 'dark';
     process.env.INCIDENT_FAILURE_THRESHOLD = String(incident_failure_threshold || 10);
     process.env.WEBHOOK_TEMPLATE = webhook_template || '';
 
@@ -814,7 +814,7 @@ WEBHOOK_TEMPLATE=${webhook_template || ''}
       { key: 'items_per_page', value: String(items_per_page || 20) },
       { key: 'refresh_interval', value: String(refresh_interval || 5000) },
       { key: 'auto_cleanup_enabled', value: String(auto_cleanup_enabled || false) },
-      { key: 'theme', value: theme || 'light' },
+      { key: 'theme', value: theme || 'dark' },
       { key: 'incident_failure_threshold', value: String(incident_failure_threshold || 10) },
     ];
 
