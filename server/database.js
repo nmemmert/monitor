@@ -311,10 +311,19 @@ try {
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('incident_failure_threshold', '10')").run();
 } catch (err) {}
 
+// Feature: heartbeat / cron-job monitoring
+try { db.prepare("ALTER TABLE resources ADD COLUMN heartbeat_token TEXT").run(); } catch(e) {}
+try { db.prepare("ALTER TABLE resources ADD COLUMN heartbeat_timeout INTEGER DEFAULT 300000").run(); } catch(e) {}
+try { db.prepare("ALTER TABLE resources ADD COLUMN last_heartbeat_at DATETIME").run(); } catch(e) {}
+
+// Feature: status page per-resource visibility
+try { db.prepare("ALTER TABLE resources ADD COLUMN is_public INTEGER DEFAULT 1").run(); } catch(e) {}
+
 // Helpful indexes for time-range queries
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_checks_resource_time ON checks(resource_id, checked_at DESC);
   CREATE INDEX IF NOT EXISTS idx_incidents_resource_time ON incidents(resource_id, started_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_resources_heartbeat_token ON resources(heartbeat_token);
 `);
 
 module.exports = db;

@@ -98,10 +98,34 @@ class MonitorService {
       case 'icmp':
       case 'ping':
         return this.checkIcmp(resource, startTime, base);
+      case 'heartbeat':
+        return this.checkHeartbeat(resource, startTime, base);
       default:
         // Fallback to HTTP if unknown
         return this.checkHttp(resource, startTime, base);
     }
+  }
+
+  checkHeartbeat(resource, startTime, base) {
+    const now = Date.now();
+    const lastPing = resource.last_heartbeat_at
+      ? new Date(resource.last_heartbeat_at).getTime()
+      : null;
+    const timeout = resource.heartbeat_timeout || 300000;
+
+    if (!lastPing) {
+      return { ...base, status: 'down', response_time: null, error_message: 'No heartbeat received yet' };
+    }
+    const elapsed = now - lastPing;
+    if (elapsed > timeout) {
+      return {
+        ...base,
+        status: 'down',
+        response_time: elapsed,
+        error_message: `Missed heartbeat — ${Math.round(elapsed / 1000)}s since last ping (timeout: ${timeout / 1000}s)`,
+      };
+    }
+    return { ...base, status: 'up', response_time: elapsed };
   }
 
   async checkHttp(resource, startTime, base) {
@@ -353,9 +377,12 @@ class MonitorService {
   handleIncident(resourceId, isDown) {
     const resource = db.prepare('SELECT * FROM resources WHERE id = ?').get(resourceId);
     
-    // Get incident failure threshold from settings (default 10)
+    // Per-resource threshold overrides global setting
     const setting = db.prepare("SELECT value FROM settings WHERE key = 'incident_failure_threshold'").get();
-    const threshold = parseInt(setting?.value || '10');
+    const globalThreshold = parseInt(setting?.value || '10');
+    const threshold = (resource?.consecutive_failures_threshold > 0)
+      ? resource.consecutive_failures_threshold
+      : globalThreshold;
     
     const activeIncident = db.prepare(`
       SELECT * FROM incidents 
@@ -371,8 +398,8 @@ class MonitorService {
         LIMIT ?
       `).all(resourceId, threshold);
 
-      const consecutiveFailures = recentChecks.every(c => c.status === 'down') ? recentChecks.length : 
-        recentChecks.findIndex(c => c.status === 'up') + 1;
+      const firstUpIdx = recentChecks.findIndex(c => c.status === 'up');
+      const consecutiveFailures = firstUpIdx === -1 ? recentChecks.length : firstUpIdx;
 
       // Only trigger incident if we've hit the threshold
       if (consecutiveFailures >= threshold && !activeIncident) {

@@ -20,13 +20,14 @@ class NotificationService {
       email_to: process.env.EMAIL_TO,
       webhook_enabled: process.env.WEBHOOK_ENABLED === 'true',
       webhook_url: process.env.WEBHOOK_URL,
+      webhook_template: process.env.WEBHOOK_TEMPLATE || '',
     });
   }
 
   setConfig(config) {
     this.emailEnabled = !!config.email_enabled;
     this.webhookEnabled = !!config.webhook_enabled;
-    this.config = config;
+    this.config = { ...this.config, ...config };
 
     // Recreate transporter when email config changes; skip if incomplete
     if (
@@ -69,10 +70,12 @@ class NotificationService {
     }
 
     const isDown = incident.type === 'started';
-    const statusEmoji = isDown ? '🔴' : '🟢';
-    const statusText = isDown ? 'DOWN' : 'UP';
-    
-    const message = `${statusEmoji} ${resource.name} is ${statusText}!\n\nURL: ${resource.url}\nCheck Type: ${resource.type || 'http'}\nTime: ${new Date().toLocaleString()}`;
+    const isSlow = incident.type === 'slow';
+    const statusEmoji = isDown ? '🔴' : isSlow ? '🟡' : '🟢';
+    const statusText = isDown ? 'DOWN' : isSlow ? 'SLOW' : 'UP';
+    const slowDetail = isSlow ? `\nResponse Time: ${incident.responseTime}ms (threshold: ${incident.threshold}ms)` : '';
+
+    const message = `${statusEmoji} ${resource.name} is ${statusText}!\n\nURL: ${resource.url}\nCheck Type: ${resource.type || 'http'}\nTime: ${new Date().toLocaleString()}${slowDetail}`;
 
     const promises = [];
 
@@ -103,16 +106,18 @@ class NotificationService {
     await Promise.allSettled(promises);
 
     // Save notification to in-app notification center
-    const status = isDown ? 'down' : 'up';
+    const status = isDown ? 'down' : isSlow ? 'slow' : 'up';
     this.saveNotification(resource, incident, status, message);
   }
 
   saveNotification(resource, incident, status, message) {
     try {
       const db = require('./database');
-      const title = status === 'down' ? 
-        `🔴 ${resource.name} is DOWN` : 
-        `🟢 ${resource.name} is UP`;
+      const title = status === 'down'
+        ? `🔴 ${resource.name} is DOWN`
+        : status === 'slow'
+          ? `🟡 ${resource.name} is SLOW`
+          : `🟢 ${resource.name} is UP`;
       
       const result = db.prepare(`
         INSERT INTO notifications (resource_id, incident_id, type, title, message, read)
@@ -179,12 +184,18 @@ class NotificationService {
         ? `<div style="margin-bottom: 12px;"><img src="cid:${logoCid}" alt="SkyWatch" style="height: 40px; width: 40px; border-radius: 8px;" /></div>`
         : '';
 
+      const isSlow = type === 'slow';
+      const isDown = type === 'started';
+      const headingColor = isDown ? '#d32f2f' : isSlow ? '#f57c00' : '#388e3c';
+      const headingText = isDown ? '🔴 Alert' : isSlow ? '🟡 Slow Response' : '🟢 Recovered';
+      const statusLabel = isDown ? 'DOWN' : isSlow ? 'SLOW' : 'UP';
+
       let htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           ${logoBlock}
-          <h2 style="color: ${type === 'started' ? '#d32f2f' : '#388e3c'};">${type === 'started' ? '🔴 Alert' : '🟢 Recovered'}</h2>
+          <h2 style="color: ${headingColor};">${headingText}</h2>
           <p><strong>Resource:</strong> ${resource.name}</p>
-          <p><strong>Status:</strong> ${type === 'started' ? 'DOWN' : 'UP'}</p>
+          <p><strong>Status:</strong> ${statusLabel}</p>
           <p><strong>URL:</strong> <a href="${resource.url}">${resource.url}</a></p>
           <p><strong>Check Type:</strong> ${resource.type || 'http'}</p>
           <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
@@ -221,7 +232,7 @@ class NotificationService {
       await this.transporter.sendMail({
         from: this.config.email_from,
         to: emailTo,
-        subject: `Alert: ${resource.name} is ${type === 'started' ? 'DOWN' : 'UP'}`,
+        subject: `Alert: ${resource.name} is ${type === 'started' ? 'DOWN' : type === 'slow' ? 'SLOW' : 'UP'}`,
         text: message,
         html: htmlContent,
         attachments: hasLogo
@@ -282,13 +293,36 @@ class NotificationService {
 
   async sendWebhook(resource, message, type) {
     try {
-      await axios.post(this.config.webhook_url || process.env.WEBHOOK_URL, {
-        resource: resource.name,
-        url: resource.url,
-        status: type === 'started' ? 'down' : 'up',
-        message,
-        timestamp: new Date().toISOString(),
-      });
+      const webhookUrl = this.config.webhook_url || process.env.WEBHOOK_URL;
+      const status = type === 'started' ? 'down' : type === 'slow' ? 'slow' : 'up';
+      const template = this.config.webhook_template;
+
+      let payload;
+      if (template) {
+        const interpolated = template
+          .replace(/\{\{name\}\}/g, resource.name)
+          .replace(/\{\{status\}\}/g, status)
+          .replace(/\{\{url\}\}/g, resource.url)
+          .replace(/\{\{type\}\}/g, resource.type || 'http')
+          .replace(/\{\{message\}\}/g, message)
+          .replace(/\{\{timestamp\}\}/g, new Date().toISOString());
+        try {
+          payload = JSON.parse(interpolated);
+        } catch {
+          // Template is plain text (e.g. Slack text field), wrap it
+          payload = { text: interpolated };
+        }
+      } else {
+        payload = {
+          resource: resource.name,
+          url: resource.url,
+          status,
+          message,
+          timestamp: new Date().toISOString(),
+        };
+      }
+
+      await axios.post(webhookUrl, payload);
     } catch (error) {
       // Webhook error handled silently
     }

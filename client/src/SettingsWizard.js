@@ -13,6 +13,7 @@ function SettingsWizard() {
     email_to: '',
     webhook_enabled: false,
     webhook_url: '',
+    webhook_template: '',
     check_interval: 60000,
     timeout: 5000,
     timezone: 'UTC',
@@ -290,10 +291,22 @@ function SettingsWizard() {
               <small>Receives POST requests with incident data when resources go offline/online</small>
             </div>
 
+            <div className="form-group">
+              <label>Payload Template (optional)</label>
+              <textarea
+                value={settings.webhook_template}
+                onChange={(e) => setSettings({ ...settings, webhook_template: e.target.value })}
+                placeholder={'{"text": "{{name}} is {{status}} — {{url}}"}'}
+                rows="4"
+                style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+              />
+              <small>Variables: <code>{'{{name}}'}</code> <code>{'{{status}}'}</code> <code>{'{{url}}'}</code> <code>{'{{type}}'}</code> <code>{'{{message}}'}</code> <code>{'{{timestamp}}'}</code>. Leave blank for the default JSON payload.</small>
+            </div>
+
             <div className="info-box">
-              <strong>💡 Webhook Payload Example:</strong>
+              <strong>Default payload (when no template is set):</strong>
               <pre>{JSON.stringify({
-                resource: "ZimaOS Server",
+                resource: "My Server",
                 url: "https://example.com",
                 status: "down",
                 message: "Resource is DOWN",
@@ -314,6 +327,7 @@ function SettingsWizard() {
                 onClick={() => handleSaveSection('Webhook', {
                   webhook_enabled: settings.webhook_enabled,
                   webhook_url: settings.webhook_url,
+                  webhook_template: settings.webhook_template,
                 })}
                 disabled={savingSection === 'Webhook'}
               >

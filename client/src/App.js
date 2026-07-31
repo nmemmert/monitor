@@ -49,7 +49,10 @@ function Dashboard() {
     tags: '',
     consecutive_failures_threshold: 1,
     response_time_threshold: null,
+    is_public: true,
+    heartbeat_timeout: 300000,
   });
+  const [searchText, setSearchText] = useState('');
   const [tagFilter, setTagFilter] = useState('');
   const [groupFilter, setGroupFilter] = useState('all');
   const [quickFilter, setQuickFilter] = useState('all');
@@ -57,6 +60,8 @@ function Dashboard() {
   const [renderLimit, setRenderLimit] = useState(120);
   const [groupData, setGroupData] = useState({ name: '', description: '' });
   const wsRef = useRef(null);
+  const wsReconnectTimer = useRef(null);
+  const wsReconnectDelay = useRef(1000);
   const actionsRef = useRef(null);
   const navigate = useNavigate();
 
@@ -88,7 +93,7 @@ function Dashboard() {
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        // Send initial ping to keep alive
+        wsReconnectDelay.current = 1000;
         ws.send(JSON.stringify({ type: 'ping' }));
       };
 
@@ -127,6 +132,10 @@ function Dashboard() {
 
       ws.onclose = () => {
         wsRef.current = null;
+        wsReconnectTimer.current = setTimeout(() => {
+          wsReconnectDelay.current = Math.min(wsReconnectDelay.current * 2, 30000);
+          connectWebSocket();
+        }, wsReconnectDelay.current);
       };
 
       wsRef.current = ws;
@@ -156,6 +165,7 @@ function Dashboard() {
     
     return () => {
       clearInterval(fallbackInterval);
+      clearTimeout(wsReconnectTimer.current);
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -170,14 +180,14 @@ function Dashboard() {
       setGroupData({ name: '', description: '' });
       loadResources();
     } catch (error) {
-      alert('Error creating group');
+      showNotification('Error', 'Failed to create group', 'error');
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/api/resources', formData);
+      const res = await axios.post('/api/resources', formData);
       setShowModal(false);
       setFormData({
         name: '',
@@ -197,10 +207,16 @@ function Dashboard() {
         tags: '',
         consecutive_failures_threshold: 1,
         response_time_threshold: null,
+        is_public: true,
+        heartbeat_timeout: 300000,
       });
+      if (res.data.heartbeat_token) {
+        const pingUrl = `${window.location.origin}/api/heartbeat/${res.data.heartbeat_token}`;
+        showNotification('Heartbeat Created', `Ping URL: ${pingUrl}`, 'success');
+      }
       loadResources();
     } catch (error) {
-      alert('Error creating resource');
+      showNotification('Error', 'Failed to add resource', 'error');
     }
   };
 
@@ -221,7 +237,7 @@ function Dashboard() {
       setEditData({});
       loadResources();
     } catch (error) {
-      alert('Error updating resource');
+      showNotification('Error', 'Failed to update resource', 'error');
     }
   };
 
@@ -236,7 +252,7 @@ function Dashboard() {
         await axios.delete(`/api/resources/${id}`);
         loadResources();
       } catch (error) {
-        alert('Error deleting resource');
+        showNotification('Error', 'Failed to delete resource', 'error');
       }
     }
   };
@@ -248,7 +264,7 @@ function Dashboard() {
       });
       loadResources();
     } catch (error) {
-      alert('Error updating maintenance mode');
+      showNotification('Error', 'Failed to update maintenance mode', 'error');
     }
   };
 
@@ -263,9 +279,9 @@ function Dashboard() {
       link.setAttribute('download', `resources-${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link);
       link.click();
-      link.parentChild.removeChild(link);
+      link.parentNode.removeChild(link);
     } catch (error) {
-      alert('Error exporting resources');
+      showNotification('Error', 'Failed to export resources', 'error');
     }
   };
 
@@ -279,13 +295,13 @@ function Dashboard() {
         headers: { 'Content-Type': 'text/csv' }
       });
 
-      alert(`Imported ${response.data.count} resources successfully!`);
+      showNotification('Import Complete', `Imported ${response.data.count} resource(s)`, 'success');
       if (response.data.errors.length > 0) {
-        alert(`Errors:\n${response.data.errors.join('\n')}`);
+        showNotification('Import Warnings', response.data.errors[0], 'warning');
       }
       loadResources();
     } catch (error) {
-      alert('Error importing resources');
+      showNotification('Error', 'Failed to import resources', 'error');
     }
 
     // Reset file input
@@ -318,9 +334,13 @@ function Dashboard() {
     return statusScore + incidentScore + uptimePenalty + responsePenalty + maintenanceOffset;
   };
 
-  // Filter resources by tag/group/quick filters
+  // Filter resources by search text, tag, group, and quick filters
   const filteredResources = resources
     .filter((r) => {
+      if (searchText) {
+        const q = searchText.toLowerCase();
+        if (!r.name.toLowerCase().includes(q) && !r.url.toLowerCase().includes(q)) return false;
+      }
       if (tagFilter) {
         const tags = (r.tags || '').toLowerCase();
         if (!tags.includes(tagFilter.toLowerCase())) return false;
@@ -369,7 +389,7 @@ function Dashboard() {
 
   useEffect(() => {
     setRenderLimit(120);
-  }, [tagFilter, groupFilter, quickFilter, sortKey]);
+  }, [searchText, tagFilter, groupFilter, quickFilter, sortKey]);
 
   const visibleResources = sortedResources.slice(0, renderLimit);
 
@@ -419,8 +439,17 @@ function Dashboard() {
             <span className="resource-group-pill">{groupName}</span>
             {resource.hasActiveIncident && <span className="incident-inline">active incident</span>}
             {resource.maintenance_mode && <span className="maintenance-inline">🛠 maintenance</span>}
+            {resource.type === 'tls' && resource.certDaysRemaining !== null && resource.certDaysRemaining <= 30 && (
+              <span
+                className="maintenance-inline"
+                style={{ background: resource.certDaysRemaining <= 7 ? '#d32f2f' : '#f57c00', color: '#fff' }}
+                title={`SSL cert expires in ${resource.certDaysRemaining} days`}
+              >
+                🔒 cert exp {resource.certDaysRemaining}d
+              </span>
+            )}
           </div>
-          <p className="resource-url row-url">{resource.url}</p>
+          <p className="resource-url row-url">{resource.type === 'heartbeat' ? '(heartbeat)' : resource.url}</p>
           <p className="resource-type row-type">{resource.type}</p>
         </div>
 
@@ -495,6 +524,13 @@ function Dashboard() {
         </div>
         <div className="dashboard-actions">
           <NotificationCenter />
+          <input
+            type="text"
+            placeholder="Search monitors..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="tag-filter-input"
+          />
           <input
             type="text"
             placeholder="Filter by tag"
@@ -746,16 +782,18 @@ function Dashboard() {
                 />
               </div>
 
+              {formData.type !== 'heartbeat' && (
               <div className="form-group">
                 <label>URL *</label>
                 <input
                   type="url"
                   value={formData.url}
                   onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                  required
+                  required={formData.type !== 'heartbeat'}
                   placeholder="https://your-zima.example.com"
                 />
               </div>
+              )}
 
               <div className="form-group">
                 <label>Group</label>
@@ -783,8 +821,23 @@ function Dashboard() {
                   <option value="dns">DNS Lookup</option>
                   <option value="websocket">WebSocket</option>
                   <option value="icmp">ICMP Ping</option>
+                  <option value="heartbeat">Heartbeat (cron job)</option>
                 </select>
               </div>
+
+              {formData.type === 'heartbeat' && (
+                <div className="form-group">
+                  <label>Heartbeat Timeout (ms)</label>
+                  <input
+                    type="number"
+                    value={formData.heartbeat_timeout}
+                    onChange={(e) => setFormData({ ...formData, heartbeat_timeout: parseInt(e.target.value) })}
+                    min="10000"
+                    step="1000"
+                  />
+                  <small style={{ color: '#666', fontSize: '0.85rem' }}>Alert if no ping received within this window (default 5 min)</small>
+                </div>
+              )}
 
               <div className="form-group">
                 <label>Check Interval (ms)</label>
@@ -796,6 +849,7 @@ function Dashboard() {
                 />
               </div>
 
+              {formData.type !== 'heartbeat' && (
               <div className="form-group">
                 <label>Timeout (ms)</label>
                 <input
@@ -805,6 +859,7 @@ function Dashboard() {
                   min="1000"
                 />
               </div>
+              )}
 
               {(formData.type === 'http' || formData.type === 'https' || formData.type === 'health') && (
                 <>
@@ -941,6 +996,16 @@ function Dashboard() {
                 <small style={{ color: '#666', fontSize: '0.85rem' }}>Override global retention period for this monitor only</small>
               </div>
 
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  id="is_public_new"
+                  checked={!!formData.is_public}
+                  onChange={(e) => setFormData({ ...formData, is_public: e.target.checked })}
+                />
+                <label htmlFor="is_public_new" style={{ margin: 0 }}>Show on public status page</label>
+              </div>
+
               <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowModal(false)}>
                   Cancel
@@ -991,8 +1056,37 @@ function Dashboard() {
                   <option value="ping">Ping</option>
                   <option value="health">Health API</option>
                   <option value="tls">TLS Certificate</option>
+                  <option value="heartbeat">Heartbeat (cron job)</option>
                 </select>
               </div>
+
+              {editData.type === 'heartbeat' && (
+                <div className="form-group">
+                  <label>Heartbeat Timeout (ms)</label>
+                  <input
+                    type="number"
+                    value={editData.heartbeat_timeout || 300000}
+                    onChange={(e) => setEditData({ ...editData, heartbeat_timeout: parseInt(e.target.value) })}
+                    min="10000"
+                    step="1000"
+                  />
+                  <small style={{ color: '#666', fontSize: '0.85rem' }}>Alert if no ping received within this window</small>
+                </div>
+              )}
+
+              {editData.type === 'heartbeat' && editData.heartbeat_token && (
+                <div className="form-group">
+                  <label>Heartbeat Ping URL</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin}/api/heartbeat/${editData.heartbeat_token}`}
+                    onClick={(e) => e.target.select()}
+                    style={{ cursor: 'pointer', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                  />
+                  <small style={{ color: '#666', fontSize: '0.85rem' }}>POST to this URL from your cron job or script</small>
+                </div>
+              )}
 
               <div className="form-group">
                 <label>Check Interval (ms)</label>
@@ -1163,6 +1257,16 @@ function Dashboard() {
                 <small style={{ color: '#666', fontSize: '0.85rem' }}>Override global retention period for this monitor only</small>
               </div>
 
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  id="is_public_edit"
+                  checked={editData.is_public !== false && editData.is_public !== 0}
+                  onChange={(e) => setEditData({ ...editData, is_public: e.target.checked })}
+                />
+                <label htmlFor="is_public_edit" style={{ margin: 0 }}>Show on public status page</label>
+              </div>
+
               <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setShowEditModal(false)}>
                   Cancel
@@ -1206,6 +1310,13 @@ function ResourceDetail() {
   const [sla, setSla] = useState(null);
   const [slaLoading, setSlaLoading] = useState(false);
   const slaWindow = 24;
+
+  const [notifications, setNotifications] = useState([]);
+  const showNotification = useCallback((title, message, type = 'info') => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, title, message, type }]);
+    setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 5000);
+  }, []);
 
   const [maintenanceWindows, setMaintenanceWindows] = useState([]);
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
@@ -1301,9 +1412,9 @@ function ResourceDetail() {
       setShowIncidentModal(false);
       setEditingIncident(null);
       setIncidentDescription('');
-      loadIncidents(); // Reload to show updated description
+      loadIncidents();
     } catch (error) {
-      alert('Failed to update incident: ' + (error.response?.data?.error || error.message));
+      showNotification('Error', error.response?.data?.error || 'Failed to update incident', 'error');
     } finally {
       setUpdatingIncident(false);
     }
@@ -1337,9 +1448,9 @@ function ResourceDetail() {
       setShowMaintenanceModal(false);
       setMaintenanceForm({ start_time: '', end_time: '', reason: '' });
       loadMaintenanceWindows();
-      alert('Maintenance window created');
+      showNotification('Success', 'Maintenance window created', 'success');
     } catch (error) {
-      alert('Error creating maintenance window');
+      showNotification('Error', 'Failed to create maintenance window', 'error');
     }
   };
 
@@ -1349,7 +1460,7 @@ function ResourceDetail() {
         await axios.delete(`/api/maintenance-windows/${windowId}`);
         loadMaintenanceWindows();
       } catch (error) {
-        alert('Error deleting maintenance window');
+        showNotification('Error', 'Failed to delete maintenance window', 'error');
       }
     }
   };
@@ -1360,7 +1471,7 @@ function ResourceDetail() {
         await axios.delete(`/api/resources/${id}`);
         navigate('/');
       } catch (error) {
-        alert('Error deleting resource');
+        showNotification('Error', 'Failed to delete resource', 'error');
       }
     }
   };
@@ -1392,6 +1503,17 @@ function ResourceDetail() {
   if (loading) return <div className="container">Loading...</div>;
   if (!resource) return <div className="container">Resource not found</div>;
 
+  const toastStack = notifications.length > 0 && (
+    <div className="toast-stack">
+      {notifications.map(n => (
+        <div key={n.id} className={`toast-item toast-${n.type}`}>
+          <strong>{n.title}</strong>
+          <div>{n.message}</div>
+        </div>
+      ))}
+    </div>
+  );
+
   const chartData = resource.stats.checks.map((check) => ({
     time: formatChartTime(check.checked_at),
     responseTime: check.response_time,
@@ -1400,6 +1522,7 @@ function ResourceDetail() {
 
   return (
     <div className="container">
+      {toastStack}
       <Link to="/" className="back-button">← Back to Dashboard</Link>
 
       <div className="detail-section">
@@ -1617,8 +1740,8 @@ function ResourceDetail() {
               const isTruncated = description.length > 60;
               const displayText = isExpanded ? description : (isTruncated ? description.substring(0, 60) + '...' : description);
               return (
-                <>
-                  <tr key={incident.id}>
+                <React.Fragment key={incident.id}>
+                  <tr>
                     <td>{start ? formatLocalTime(start) : '-'}</td>
                     <td>{end ? formatLocalTime(end) : 'Open'}</td>
                     <td>{durationText}</td>
@@ -1646,7 +1769,7 @@ function ResourceDetail() {
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               );
             })}
           </tbody>
@@ -1821,6 +1944,7 @@ function Navbar() {
             <Link to="/sla" className="nav-link">SLA</Link>
             <Link to="/observability" className="nav-link">Observability</Link>
             <Link to="/notifications" className="nav-link">Notifications</Link>
+            <Link to="/status" className="nav-link" target="_blank" rel="noreferrer">Status</Link>
             <Link to="/settings" className="nav-link settings-link">
               Settings
               {!notificationsConfigured && (

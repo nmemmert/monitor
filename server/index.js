@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const WebSocket = require('ws');
 const http = require('http');
+const { randomUUID } = require('crypto');
 require('dotenv').config();
 
 const db = require('./database');
@@ -105,6 +106,123 @@ function getTimezoneOffset() {
   return result;
 }
 
+// Build settings object merging DB overrides on top of env vars
+function buildSettingsFromDb(dbSettings = {}) {
+  return {
+    email_enabled: (dbSettings.email_enabled || process.env.EMAIL_ENABLED) === 'true',
+    email_host: dbSettings.email_host || process.env.EMAIL_HOST || 'smtp.gmail.com',
+    email_port: parseInt(dbSettings.email_port || process.env.EMAIL_PORT) || 587,
+    email_user: dbSettings.email_user || process.env.EMAIL_USER || '',
+    email_pass: '',
+    email_from: dbSettings.email_from || process.env.EMAIL_FROM || '',
+    email_to: dbSettings.email_to || process.env.EMAIL_TO || '',
+    webhook_enabled: (dbSettings.webhook_enabled || process.env.WEBHOOK_ENABLED) === 'true',
+    webhook_url: dbSettings.webhook_url || process.env.WEBHOOK_URL || '',
+    check_interval: parseInt(dbSettings.check_interval || process.env.CHECK_INTERVAL) || 60000,
+    timeout: parseInt(dbSettings.timeout || process.env.TIMEOUT) || 5000,
+    timezone: dbSettings.timezone || process.env.TIMEZONE || 'UTC',
+    retention_days: parseInt(dbSettings.retention_days || process.env.RETENTION_DAYS) || 7,
+    auto_cleanup_enabled: (dbSettings.auto_cleanup_enabled || process.env.AUTO_CLEANUP_ENABLED) === 'true',
+    consecutive_failures: parseInt(dbSettings.consecutive_failures || process.env.CONSECUTIVE_FAILURES) || 3,
+    grace_period: parseInt(dbSettings.grace_period || process.env.GRACE_PERIOD) || 300,
+    downtime_threshold: parseInt(dbSettings.downtime_threshold || process.env.DOWNTIME_THRESHOLD) || 600,
+    alert_retry_count: parseInt(dbSettings.alert_retry_count || process.env.ALERT_RETRY_COUNT) || 3,
+    alert_retry_delay: parseInt(dbSettings.alert_retry_delay || process.env.ALERT_RETRY_DELAY) || 60,
+    fallback_webhook: dbSettings.fallback_webhook || process.env.FALLBACK_WEBHOOK || '',
+    global_quiet_hours_start: dbSettings.global_quiet_hours_start || process.env.GLOBAL_QUIET_HOURS_START || '',
+    global_quiet_hours_end: dbSettings.global_quiet_hours_end || process.env.GLOBAL_QUIET_HOURS_END || '',
+    escalation_hours: parseInt(dbSettings.escalation_hours || process.env.ESCALATION_HOURS) || 4,
+    default_sort: dbSettings.default_sort || process.env.DEFAULT_SORT || 'name',
+    items_per_page: parseInt(dbSettings.items_per_page || process.env.ITEMS_PER_PAGE) || 20,
+    refresh_interval: parseInt(dbSettings.refresh_interval || process.env.REFRESH_INTERVAL) || 5000,
+    theme: dbSettings.theme || process.env.THEME || 'light',
+    incident_failure_threshold: parseInt(dbSettings.incident_failure_threshold || process.env.INCIDENT_FAILURE_THRESHOLD) || 10,
+    webhook_template: dbSettings.webhook_template || process.env.WEBHOOK_TEMPLATE || '',
+  };
+}
+
+// Build dashboard payload (shared between HTTP route and WebSocket broadcast)
+function getDashboardPayload() {
+  const resources = db.prepare('SELECT * FROM resources ORDER BY group_id, name').all();
+  const groups = db.prepare('SELECT * FROM groups ORDER BY name').all();
+
+  const overview = resources.map(resource => {
+    const lastCheck = monitorService.getLastCheck(resource.id);
+    const stats = monitorService.getResourceStats(resource.id, 24);
+    const activeIncident = db.prepare(`
+      SELECT * FROM incidents WHERE resource_id = ? AND resolved_at IS NULL
+    `).get(resource.id);
+    const recentChecks = db.prepare(`
+      SELECT response_time, status, REPLACE(checked_at, ' ', 'T') || 'Z' as checked_at
+      FROM checks WHERE resource_id = ?
+      ORDER BY checked_at DESC LIMIT 15
+    `).all(resource.id).reverse();
+
+    // Pull cert expiry from latest TLS check details
+    let certDaysRemaining = null;
+    if (resource.type === 'tls') {
+      const lastTlsCheck = db.prepare(`
+        SELECT details FROM checks WHERE resource_id = ? AND details IS NOT NULL ORDER BY checked_at DESC LIMIT 1
+      `).get(resource.id);
+      if (lastTlsCheck?.details) {
+        try {
+          const d = JSON.parse(lastTlsCheck.details);
+          if (typeof d.days_remaining === 'number') certDaysRemaining = d.days_remaining;
+        } catch {}
+      }
+    }
+
+    return {
+      id: resource.id,
+      name: resource.name,
+      url: resource.url,
+      type: resource.type,
+      group_id: resource.group_id,
+      enabled: resource.enabled,
+      check_interval: resource.check_interval,
+      timeout: resource.timeout,
+      http_keyword: resource.http_keyword,
+      http_headers: resource.http_headers,
+      quiet_hours_start: resource.quiet_hours_start,
+      quiet_hours_end: resource.quiet_hours_end,
+      cert_expiry_days: resource.cert_expiry_days,
+      sla_target: resource.sla_target,
+      email_to: resource.email_to,
+      maintenance_mode: resource.maintenance_mode,
+      is_public: resource.is_public !== 0,
+      heartbeat_token: resource.heartbeat_token,
+      heartbeat_timeout: resource.heartbeat_timeout,
+      consecutive_failures_threshold: resource.consecutive_failures_threshold,
+      response_time_threshold: resource.response_time_threshold,
+      certDaysRemaining,
+      status: lastCheck?.status || 'unknown',
+      uptime: stats.uptime,
+      avgResponseTime: stats.avgResponseTime,
+      lastCheck: lastCheck?.checked_at,
+      hasActiveIncident: !!activeIncident,
+      recentChecks,
+    };
+  });
+
+  return { resources: overview, groups };
+}
+
+// Validate resource body fields (shared between POST and PUT)
+function validateResourceBody(body, requireUrl = true) {
+  const { name, url, type, check_interval, timeout, sla_target, retention_days } = body;
+  const isHeartbeat = (type || 'http') === 'heartbeat';
+  if (!name) return 'Name is required';
+  if (!isHeartbeat && requireUrl && !url) return 'URL is required';
+  if (!isHeartbeat && url) {
+    try { new URL(url); } catch (e) { return 'Invalid URL format'; }
+  }
+  if (check_interval && (isNaN(check_interval) || check_interval < 10000)) return 'Check interval must be at least 10000ms';
+  if (timeout && (isNaN(timeout) || timeout < 1000)) return 'Timeout must be at least 1000ms';
+  if (sla_target !== undefined && sla_target !== null && (isNaN(sla_target) || sla_target < 0 || sla_target > 100)) return 'SLA target must be between 0 and 100';
+  if (retention_days && (isNaN(retention_days) || retention_days < 1 || retention_days > 365)) return 'Retention days must be between 1 and 365';
+  return null;
+}
+
 app.use(cors());
 app.use(express.json());
 
@@ -133,17 +251,6 @@ app.use((req, res, next) => {
   };
   
   next();
-});
-
-// Error tracking middleware
-app.use((err, req, res, next) => {
-  metrics.trackError(err, {
-    method: req.method,
-    url: req.url,
-    ip: req.ip
-  });
-  
-  res.status(500).json({ error: 'Internal server error' });
 });
 
 // API Routes
@@ -204,42 +311,24 @@ app.get('/api/resources/:id', (req, res) => {
 
 // Create resource
 app.post('/api/resources', (req, res) => {
-  const { name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days } = req.body;
+  const { name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold } = req.body;
 
-  if (!name || !url) {
-    return res.status(400).json({ error: 'Name and URL are required' });
-  }
-
-  // Validate URL format
-  try {
-    new URL(url);
-  } catch (e) {
-    return res.status(400).json({ error: 'Invalid URL format' });
-  }
-
-  // Validate numeric fields
-  if (check_interval && (isNaN(check_interval) || check_interval < 10000)) {
-    return res.status(400).json({ error: 'Check interval must be at least 10000ms' });
-  }
-  if (timeout && (isNaN(timeout) || timeout < 1000)) {
-    return res.status(400).json({ error: 'Timeout must be at least 1000ms' });
-  }
-  if (sla_target && (isNaN(sla_target) || sla_target < 0 || sla_target > 100)) {
-    return res.status(400).json({ error: 'SLA target must be between 0 and 100' });
-  }
-  if (retention_days && (isNaN(retention_days) || retention_days < 1 || retention_days > 365)) {
-    return res.status(400).json({ error: 'Retention days must be between 1 and 365' });
-  }
+  const validationError = validateResourceBody(req.body);
+  if (validationError) return res.status(400).json({ error: validationError });
 
   try {
+    const isHeartbeat = (type || 'http') === 'heartbeat';
+    const token = isHeartbeat ? randomUUID() : null;
+    const effectiveUrl = isHeartbeat ? `heartbeat://${name}` : url;
+
     const stmt = db.prepare(`
-      INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_token, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       name,
-      url,
+      effectiveUrl,
       type || 'http',
       check_interval || 60000,
       timeout || 5000,
@@ -252,7 +341,12 @@ app.post('/api/resources', (req, res) => {
       sla_target || 99.9,
       email_to || null,
       maintenance_mode ? 1 : 0,
-      retention_days || null
+      retention_days || null,
+      is_public !== false ? 1 : 0,
+      token,
+      heartbeat_timeout || 300000,
+      consecutive_failures_threshold || 1,
+      response_time_threshold || null
     );
 
     // Invalidate related cache entries
@@ -262,9 +356,8 @@ app.post('/api/resources', (req, res) => {
     // Audit log
     auditLog.logResourceChange('create', result.lastInsertRowid, { name, url, type, enabled: true }, 'system', req.ip);
 
-    res.json({ id: result.lastInsertRowid, message: 'Resource created' });
+    res.json({ id: result.lastInsertRowid, message: 'Resource created', heartbeat_token: token });
   } catch (err) {
-    // Helpful hint if migration missing
     const hint = err.message.includes('no column named maintenance_mode')
       ? 'Database schema missing maintenance_mode. Restart server to run migrations.'
       : undefined;
@@ -274,21 +367,28 @@ app.post('/api/resources', (req, res) => {
 
 // Update resource
 app.put('/api/resources/:id', (req, res) => {
-  const { name, url, type, check_interval, timeout, enabled, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days } = req.body;
+  const { name, url, type, check_interval, timeout, enabled, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold } = req.body;
+
+  const validationError = validateResourceBody(req.body);
+  if (validationError) return res.status(400).json({ error: validationError });
+
+  const existing = db.prepare('SELECT url, type, heartbeat_token FROM resources WHERE id = ?').get(req.params.id);
+  const isHeartbeat = (type || existing?.type || 'http') === 'heartbeat';
+  const effectiveUrl = isHeartbeat ? (existing?.url || `heartbeat://${name}`) : url;
 
   const stmt = db.prepare(`
-    UPDATE resources 
-    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?, http_keyword = ?, http_headers = ?, quiet_hours_start = ?, quiet_hours_end = ?, cert_expiry_days = ?, sla_target = ?, email_to = ?, maintenance_mode = ?, retention_days = ?
+    UPDATE resources
+    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?, http_keyword = ?, http_headers = ?, quiet_hours_start = ?, quiet_hours_end = ?, cert_expiry_days = ?, sla_target = ?, email_to = ?, maintenance_mode = ?, retention_days = ?, is_public = ?, heartbeat_timeout = ?, consecutive_failures_threshold = ?, response_time_threshold = ?
     WHERE id = ?
   `);
 
   stmt.run(
-    name, 
-    url, 
-    type, 
-    check_interval, 
-    timeout, 
-    enabled ? 1 : 0, 
+    name,
+    effectiveUrl,
+    type,
+    check_interval,
+    timeout,
+    enabled ? 1 : 0,
     group_id || null,
     http_keyword || null,
     http_headers || null,
@@ -299,10 +399,13 @@ app.put('/api/resources/:id', (req, res) => {
     email_to || null,
     maintenance_mode ? 1 : 0,
     retention_days || null,
+    is_public !== false ? 1 : 0,
+    heartbeat_timeout || 300000,
+    consecutive_failures_threshold || 1,
+    response_time_threshold || null,
     req.params.id
   );
 
-  // Invalidate related cache entries
   cache.invalidatePattern('history:');
   cache.invalidatePattern('sla:');
 
@@ -382,68 +485,20 @@ app.patch('/api/resources/:id/maintenance-mode', (req, res) => {
 // Delete resource
 app.delete('/api/resources/:id', (req, res) => {
   const resource = db.prepare('SELECT name, url FROM resources WHERE id = ?').get(req.params.id);
-  
+  if (!resource) return res.status(404).json({ error: 'Resource not found' });
+
   db.prepare('DELETE FROM resources WHERE id = ?').run(req.params.id);
-  
-  // Invalidate related cache entries
+
   cache.invalidatePattern('history:');
   cache.invalidatePattern('sla:');
-  
-  // Audit log
-  if (resource) {
-    auditLog.logResourceChange('delete', req.params.id, { name: resource.name, url: resource.url }, 'system', req.ip);
-  }
-  
+  auditLog.logResourceChange('delete', req.params.id, { name: resource.name, url: resource.url }, 'system', req.ip);
+
   res.json({ message: 'Resource deleted' });
 });
 
 // Get dashboard overview (grouped)
 app.get('/api/dashboard', (req, res) => {
-  const resources = db.prepare('SELECT * FROM resources ORDER BY group_id, name').all();
-  const groups = db.prepare('SELECT * FROM groups ORDER BY name').all();
-  
-  const overview = resources.map(resource => {
-    const lastCheck = monitorService.getLastCheck(resource.id);
-    const stats = monitorService.getResourceStats(resource.id, 24);
-    const activeIncident = db.prepare(`
-      SELECT * FROM incidents 
-      WHERE resource_id = ? AND resolved_at IS NULL
-    `).get(resource.id);
-
-    const recentChecks = db.prepare(`
-      SELECT response_time, status, REPLACE(checked_at, ' ', 'T') || 'Z' as checked_at
-      FROM checks
-      WHERE resource_id = ?
-      ORDER BY checked_at DESC
-      LIMIT 15
-    `).all(resource.id).reverse();
-
-    return {
-      id: resource.id,
-      name: resource.name,
-      url: resource.url,
-      type: resource.type,
-      group_id: resource.group_id,
-      enabled: resource.enabled,
-      check_interval: resource.check_interval,
-      timeout: resource.timeout,
-      http_keyword: resource.http_keyword,
-      http_headers: resource.http_headers,
-      quiet_hours_start: resource.quiet_hours_start,
-      quiet_hours_end: resource.quiet_hours_end,
-      cert_expiry_days: resource.cert_expiry_days,
-      sla_target: resource.sla_target,
-      email_to: resource.email_to,
-      status: lastCheck?.status || 'unknown',
-      uptime: stats.uptime,
-      avgResponseTime: stats.avgResponseTime,
-      lastCheck: lastCheck?.checked_at,
-      hasActiveIncident: !!activeIncident,
-      recentChecks,
-    };
-  });
-
-  res.json({ resources: overview, groups });
+  res.json(getDashboardPayload());
 });
 
 // Get incidents
@@ -550,90 +605,20 @@ app.post('/api/notifications/clear', (req, res) => {
 
 // Get settings
 app.get('/api/settings', (req, res) => {
-  // Prevent browser caching - always fetch fresh data
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
-  
-  // Try to get settings from database first, fallback to process.env
+
   try {
     const dbSettings = {};
     const rows = db.prepare('SELECT key, value FROM settings').all();
     for (const row of rows) {
       dbSettings[row.key] = row.value;
     }
-
-    // Build response with database values taking precedence over env vars
-    const settings = {
-      email_enabled: (dbSettings.email_enabled || process.env.EMAIL_ENABLED) === 'true',
-      email_host: dbSettings.email_host || process.env.EMAIL_HOST || 'smtp.gmail.com',
-      email_port: parseInt(dbSettings.email_port || process.env.EMAIL_PORT) || 587,
-      email_user: dbSettings.email_user || process.env.EMAIL_USER || '',
-      email_pass: '', // Don't send password to client
-      email_from: dbSettings.email_from || process.env.EMAIL_FROM || '',
-      email_to: dbSettings.email_to || process.env.EMAIL_TO || '',
-      webhook_enabled: (dbSettings.webhook_enabled || process.env.WEBHOOK_ENABLED) === 'true',
-      webhook_url: dbSettings.webhook_url || process.env.WEBHOOK_URL || '',
-      check_interval: parseInt(dbSettings.check_interval || process.env.CHECK_INTERVAL) || 60000,
-      timeout: parseInt(dbSettings.timeout || process.env.TIMEOUT) || 5000,
-      timezone: dbSettings.timezone || process.env.TIMEZONE || 'UTC',
-      // Data retention settings
-      retention_days: parseInt(dbSettings.retention_days || process.env.RETENTION_DAYS) || 7,
-      auto_cleanup_enabled: (dbSettings.auto_cleanup_enabled || process.env.AUTO_CLEANUP_ENABLED) === 'true',
-      // Incident thresholds
-      consecutive_failures: parseInt(dbSettings.consecutive_failures || process.env.CONSECUTIVE_FAILURES) || 3,
-      grace_period: parseInt(dbSettings.grace_period || process.env.GRACE_PERIOD) || 300,
-      downtime_threshold: parseInt(dbSettings.downtime_threshold || process.env.DOWNTIME_THRESHOLD) || 600,
-      // Alert retry logic
-      alert_retry_count: parseInt(dbSettings.alert_retry_count || process.env.ALERT_RETRY_COUNT) || 3,
-      alert_retry_delay: parseInt(dbSettings.alert_retry_delay || process.env.ALERT_RETRY_DELAY) || 60,
-      fallback_webhook: dbSettings.fallback_webhook || process.env.FALLBACK_WEBHOOK || '',
-      // Alert scheduling
-      global_quiet_hours_start: dbSettings.global_quiet_hours_start || process.env.GLOBAL_QUIET_HOURS_START || '',
-      global_quiet_hours_end: dbSettings.global_quiet_hours_end || process.env.GLOBAL_QUIET_HOURS_END || '',
-      escalation_hours: parseInt(dbSettings.escalation_hours || process.env.ESCALATION_HOURS) || 4,
-      // Dashboard customization
-      default_sort: dbSettings.default_sort || process.env.DEFAULT_SORT || 'name',
-      items_per_page: parseInt(dbSettings.items_per_page || process.env.ITEMS_PER_PAGE) || 20,
-      refresh_interval: parseInt(dbSettings.refresh_interval || process.env.REFRESH_INTERVAL) || 5000,
-      theme: dbSettings.theme || process.env.THEME || 'light',
-      incident_failure_threshold: parseInt(dbSettings.incident_failure_threshold || process.env.INCIDENT_FAILURE_THRESHOLD) || 10,
-    };
-    res.json(settings);
+    res.json(buildSettingsFromDb(dbSettings));
   } catch (error) {
     console.error('Error reading settings:', error);
-    // Fallback to env vars only if database read fails
-    const settings = {
-      email_enabled: process.env.EMAIL_ENABLED === 'true',
-      email_host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-      email_port: parseInt(process.env.EMAIL_PORT) || 587,
-      email_user: process.env.EMAIL_USER || '',
-      email_pass: '', // Don't send password to client
-      email_from: process.env.EMAIL_FROM || '',
-      email_to: process.env.EMAIL_TO || '',
-      webhook_enabled: process.env.WEBHOOK_ENABLED === 'true',
-      webhook_url: process.env.WEBHOOK_URL || '',
-      check_interval: parseInt(process.env.CHECK_INTERVAL) || 60000,
-      timeout: parseInt(process.env.TIMEOUT) || 5000,
-      timezone: process.env.TIMEZONE || 'UTC',
-      retention_days: parseInt(process.env.RETENTION_DAYS) || 7,
-      auto_cleanup_enabled: process.env.AUTO_CLEANUP_ENABLED === 'true',
-      consecutive_failures: parseInt(process.env.CONSECUTIVE_FAILURES) || 3,
-      grace_period: parseInt(process.env.GRACE_PERIOD) || 300,
-      downtime_threshold: parseInt(process.env.DOWNTIME_THRESHOLD) || 600,
-      alert_retry_count: parseInt(process.env.ALERT_RETRY_COUNT) || 3,
-      alert_retry_delay: parseInt(process.env.ALERT_RETRY_DELAY) || 60,
-      fallback_webhook: process.env.FALLBACK_WEBHOOK || '',
-      global_quiet_hours_start: process.env.GLOBAL_QUIET_HOURS_START || '',
-      global_quiet_hours_end: process.env.GLOBAL_QUIET_HOURS_END || '',
-      escalation_hours: parseInt(process.env.ESCALATION_HOURS) || 4,
-      default_sort: process.env.DEFAULT_SORT || 'name',
-      items_per_page: parseInt(process.env.ITEMS_PER_PAGE) || 20,
-      refresh_interval: parseInt(process.env.REFRESH_INTERVAL) || 5000,
-      theme: process.env.THEME || 'light',
-      incident_failure_threshold: parseInt(process.env.INCIDENT_FAILURE_THRESHOLD) || 10,
-    };
-    res.json(settings);
+    res.json(buildSettingsFromDb({}));
   }
 });
 
@@ -672,6 +657,7 @@ app.post('/api/settings', (req, res) => {
     refresh_interval,
     theme,
     incident_failure_threshold,
+    webhook_template,
   } = req.body;
 
   // Validate email configuration if enabled
@@ -738,6 +724,7 @@ ITEMS_PER_PAGE=${items_per_page || 20}
 REFRESH_INTERVAL=${refresh_interval || 5000}
 THEME=${theme || 'light'}
 INCIDENT_FAILURE_THRESHOLD=${incident_failure_threshold || 10}
+WEBHOOK_TEMPLATE=${webhook_template || ''}
 `;
 
   try {
@@ -772,6 +759,7 @@ INCIDENT_FAILURE_THRESHOLD=${incident_failure_threshold || 10}
     process.env.REFRESH_INTERVAL = String(refresh_interval || 5000);
     process.env.THEME = theme || 'light';
     process.env.INCIDENT_FAILURE_THRESHOLD = String(incident_failure_threshold || 10);
+    process.env.WEBHOOK_TEMPLATE = webhook_template || '';
 
     // Also save to database for persistence
     const settingsTable = [
@@ -783,6 +771,7 @@ INCIDENT_FAILURE_THRESHOLD=${incident_failure_threshold || 10}
       { key: 'email_to', value: email_to },
       { key: 'webhook_enabled', value: String(webhook_enabled) },
       { key: 'webhook_url', value: webhook_url },
+      { key: 'webhook_template', value: webhook_template || '' },
       { key: 'timezone', value: timezone || 'UTC' },
       { key: 'retention_days', value: String(retention_days || 7) },
       { key: 'check_interval', value: String(check_interval || 60000) },
@@ -806,7 +795,7 @@ INCIDENT_FAILURE_THRESHOLD=${incident_failure_threshold || 10}
 
     for (const setting of settingsTable) {
       db.prepare(`
-        INSERT OR REPLACE INTO settings (key, value, updated_at) 
+        INSERT OR REPLACE INTO settings (key, value, updated_at)
         VALUES (?, ?, CURRENT_TIMESTAMP)
       `).run(setting.key, setting.value);
     }
@@ -821,6 +810,7 @@ INCIDENT_FAILURE_THRESHOLD=${incident_failure_threshold || 10}
       email_to,
       webhook_enabled: webhook_enabled === true || webhook_enabled === 'true',
       webhook_url,
+      webhook_template: webhook_template || '',
     });
 
     res.json({ message: 'Settings saved successfully' });
@@ -1717,6 +1707,67 @@ app.post('/api/resources/:id/alert-rules', (req, res) => {
   }
 });
 
+// Get alert rules for a resource
+app.get('/api/resources/:id/alert-rules', (req, res) => {
+  const resource = db.prepare('SELECT consecutive_failures_threshold, response_time_threshold FROM resources WHERE id = ?').get(req.params.id);
+  if (!resource) return res.status(404).json({ error: 'Resource not found' });
+  res.json(resource);
+});
+
+// Heartbeat ping endpoint — cron jobs POST here to signal they're alive
+app.post('/api/heartbeat/:token', (req, res) => {
+  const resource = db.prepare('SELECT id, name FROM resources WHERE heartbeat_token = ? AND enabled = 1').get(req.params.token);
+  if (!resource) return res.status(404).json({ error: 'Unknown heartbeat token' });
+
+  db.prepare('UPDATE resources SET last_heartbeat_at = CURRENT_TIMESTAMP WHERE id = ?').run(resource.id);
+
+  // Write an 'up' check so we have a record of the ping
+  db.prepare(`
+    INSERT INTO checks (resource_id, status, response_time, checked_at)
+    VALUES (?, 'up', 0, CURRENT_TIMESTAMP)
+  `).run(resource.id);
+
+  res.json({ ok: true, resource: resource.name });
+});
+
+// Public status page — only returns resources with is_public = 1
+app.get('/api/status-page', (req, res) => {
+  try {
+    const resources = db.prepare('SELECT * FROM resources WHERE is_public = 1 AND enabled = 1 ORDER BY name').all();
+    const incidents = db.prepare(`
+      SELECT i.*, r.name AS resource_name FROM incidents i
+      JOIN resources r ON r.id = i.resource_id
+      WHERE r.is_public = 1 AND i.resolved_at IS NULL
+      ORDER BY i.started_at DESC
+    `).all();
+    const maintenanceWindows = db.prepare(`
+      SELECT mw.*, r.name AS resource_name FROM maintenance_windows mw
+      JOIN resources r ON r.id = mw.resource_id
+      WHERE r.is_public = 1
+      ORDER BY mw.start_time DESC
+    `).all();
+
+    const overview = resources.map(resource => {
+      const stats = monitorService.getResourceStats(resource.id, 24);
+      const lastCheck = monitorService.getLastCheck(resource.id);
+      return {
+        id: resource.id,
+        name: resource.name,
+        url: resource.type === 'heartbeat' ? null : resource.url,
+        type: resource.type,
+        status: lastCheck?.status || 'unknown',
+        uptime: stats.uptime,
+        avgResponseTime: stats.avgResponseTime,
+        lastCheck: lastCheck?.checked_at,
+      };
+    });
+
+    res.json({ resources: overview, incidents, maintenanceWindows });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load status page data' });
+  }
+});
+
 // Get transaction steps for a resource
 app.get('/api/resources/:id/transaction-steps', (req, res) => {
   const { id } = req.params;
@@ -2061,6 +2112,12 @@ app.use(express.static(path.join(__dirname, '../client/build'), {
   }
 }));
 
+// Error tracking middleware — must be after all routes
+app.use((err, req, res, next) => {
+  metrics.trackError(err, { method: req.method, url: req.url, ip: req.ip });
+  res.status(500).json({ error: 'Internal server error' });
+});
+
 // Only serve index.html for non-file routes (no extension)
 app.get('*', (req, res, next) => {
   // If the request has a file extension, let static middleware handle it or 404
@@ -2073,46 +2130,7 @@ app.get('*', (req, res, next) => {
 // WebSocket handler function
 function broadcastDashboardUpdate() {
   try {
-    const resources = db.prepare('SELECT * FROM resources ORDER BY group_id, name').all();
-    const groups = db.prepare('SELECT * FROM groups ORDER BY name').all();
-    
-    const overview = resources.map(resource => {
-      const lastCheck = monitorService.getLastCheck(resource.id);
-      const stats = monitorService.getResourceStats(resource.id, 24);
-      const activeIncident = db.prepare(`
-        SELECT * FROM incidents 
-        WHERE resource_id = ? AND resolved_at IS NULL
-      `).get(resource.id);
-
-      const recentChecks = db.prepare(`
-        SELECT response_time, status, REPLACE(checked_at, ' ', 'T') || 'Z' as checked_at
-        FROM checks
-        WHERE resource_id = ?
-        ORDER BY checked_at DESC
-        LIMIT 15
-      `).all(resource.id).reverse();
-
-      return {
-        id: resource.id,
-        name: resource.name,
-        url: resource.url,
-        type: resource.type,
-        group_id: resource.group_id,
-        enabled: resource.enabled,
-        status: lastCheck?.status || 'unknown',
-        uptime: stats.uptime,
-        avgResponseTime: stats.avgResponseTime,
-        lastCheck: lastCheck?.checked_at,
-        hasActiveIncident: !!activeIncident,
-        recentChecks,
-      };
-    });
-
-    const message = JSON.stringify({
-      type: 'dashboard',
-      data: { resources: overview, groups }
-    });
-
+    const message = JSON.stringify({ type: 'dashboard', data: getDashboardPayload() });
     wsClients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(message);

@@ -18,14 +18,10 @@ function Status() {
 
   const loadStatusData = async () => {
     try {
-      const [resourcesRes, incidentsRes, maintenanceRes] = await Promise.all([
-        axios.get('/api/resources'),
-        axios.get('/api/incidents'),
-        axios.get('/api/maintenance-windows'),
-      ]);
-      setResources(resourcesRes.data.resources || []);
-      setIncidents(incidentsRes.data.incidents || []);
-      setMaintenanceWindows(maintenanceRes.data.maintenanceWindows || []);
+      const statusRes = await axios.get('/api/status-page');
+      setResources(statusRes.data.resources || []);
+      setIncidents(statusRes.data.incidents || []);
+      setMaintenanceWindows(statusRes.data.maintenanceWindows || []);
       setLastUpdated(new Date());
     } catch (error) {
       // Status load error handled
