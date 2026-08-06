@@ -12,9 +12,10 @@ function Status() {
 
   useEffect(() => {
     loadStatusData();
-    const interval = setInterval(loadStatusData, 15000); // Refresh every 15 seconds for critical status
+    if (!autoRefresh) return;
+    const interval = setInterval(loadStatusData, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [autoRefresh]);
 
   const loadStatusData = async () => {
     try {

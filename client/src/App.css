@@ -1,3 +1,56 @@
+/* ── Skeleton loading ── */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 0.8; }
+}
+.skeleton {
+  background: var(--surface-2);
+  border-radius: 4px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+.skeleton-row { pointer-events: none; min-height: 72px; }
+.skeleton-name { width: 40%; height: 14px; margin-bottom: 8px; }
+.skeleton-url  { width: 60%; height: 11px; }
+.skeleton-badge { width: 56px; height: 22px; border-radius: 12px; }
+
+/* ── Inline delete confirm ── */
+.action-delete-confirm { color: #ef4444 !important; }
+
+/* ── Network discovery modal ── */
+.discovery-scanning {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 0;
+  color: var(--text-muted);
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.discovery-spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+.discovery-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 360px; overflow-y: auto; }
+.discovery-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.discovery-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.discovery-ip { font-weight: 600; font-size: 0.9rem; color: var(--text); }
+.discovery-hostname { font-size: 0.8rem; color: var(--text-muted); }
+.discovery-url { font-size: 0.8rem; color: var(--accent); font-family: monospace; word-break: break-all; }
+.discovery-ports { font-size: 0.75rem; color: var(--text-dim); }
+.btn-sm { padding: 0.3rem 0.7rem; font-size: 0.82rem; white-space: nowrap; }
+
 /* ── Theme variables ── */
 :root {
   --app-bg: #020617;

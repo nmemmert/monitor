@@ -13,6 +13,7 @@ const notificationService = require('./notificationService');
 const cache = require('./cache');
 const security = require('./securityMiddleware');
 const metrics = require('./metrics');
+const { discoverNetwork } = require('./networkDiscovery');
 const auditLog = require('./auditLog');
 
 // Initialize notifications table if it doesn't exist
@@ -142,6 +143,9 @@ function buildSettingsFromDb(dbSettings = {}) {
     items_per_page: parseInt(dbSettings.items_per_page || process.env.ITEMS_PER_PAGE) || 20,
     refresh_interval: parseInt(dbSettings.refresh_interval || process.env.REFRESH_INTERVAL) || 5000,
     theme: 'dark',
+    ntfy_enabled: (dbSettings.ntfy_enabled || process.env.NTFY_ENABLED) === 'true',
+    ntfy_url: dbSettings.ntfy_url || process.env.NTFY_URL || 'https://ntfy.sh',
+    ntfy_topic: dbSettings.ntfy_topic || process.env.NTFY_TOPIC || '',
     incident_failure_threshold: parseInt(dbSettings.incident_failure_threshold || process.env.INCIDENT_FAILURE_THRESHOLD) || 10,
     webhook_template: dbSettings.webhook_template || process.env.WEBHOOK_TEMPLATE || '',
   };
@@ -689,6 +693,9 @@ app.post('/api/settings', (req, res) => {
     theme,
     incident_failure_threshold,
     webhook_template,
+    ntfy_enabled,
+    ntfy_url,
+    ntfy_topic,
   } = req.body;
 
   // Validate email configuration if enabled
@@ -754,6 +761,9 @@ DEFAULT_SORT=${default_sort || 'name'}
 ITEMS_PER_PAGE=${items_per_page || 20}
 REFRESH_INTERVAL=${refresh_interval || 5000}
 THEME=dark
+NTFY_ENABLED=${ntfy_enabled || false}
+NTFY_URL=${ntfy_url || 'https://ntfy.sh'}
+NTFY_TOPIC=${ntfy_topic || ''}
 INCIDENT_FAILURE_THRESHOLD=${incident_failure_threshold || 10}
 WEBHOOK_TEMPLATE=${webhook_template || ''}
 `;
@@ -789,6 +799,9 @@ WEBHOOK_TEMPLATE=${webhook_template || ''}
     process.env.ITEMS_PER_PAGE = String(items_per_page || 20);
     process.env.REFRESH_INTERVAL = String(refresh_interval || 5000);
     process.env.THEME = 'dark';
+    process.env.NTFY_ENABLED = String(ntfy_enabled || false);
+    process.env.NTFY_URL = ntfy_url || 'https://ntfy.sh';
+    process.env.NTFY_TOPIC = ntfy_topic || '';
     process.env.INCIDENT_FAILURE_THRESHOLD = String(incident_failure_threshold || 10);
     process.env.WEBHOOK_TEMPLATE = webhook_template || '';
 
@@ -821,6 +834,9 @@ WEBHOOK_TEMPLATE=${webhook_template || ''}
       { key: 'refresh_interval', value: String(refresh_interval || 5000) },
       { key: 'auto_cleanup_enabled', value: String(auto_cleanup_enabled || false) },
       // theme is always dark; skip saving to avoid stale overrides
+      { key: 'ntfy_enabled', value: String(ntfy_enabled || false) },
+      { key: 'ntfy_url', value: ntfy_url || 'https://ntfy.sh' },
+      { key: 'ntfy_topic', value: ntfy_topic || '' },
       { key: 'incident_failure_threshold', value: String(incident_failure_threshold || 10) },
     ];
 
@@ -842,6 +858,9 @@ WEBHOOK_TEMPLATE=${webhook_template || ''}
       webhook_enabled: webhook_enabled === true || webhook_enabled === 'true',
       webhook_url,
       webhook_template: webhook_template || '',
+      ntfy_enabled: ntfy_enabled === true || ntfy_enabled === 'true',
+      ntfy_url: ntfy_url || 'https://ntfy.sh',
+      ntfy_topic: ntfy_topic || '',
     });
 
     res.json({ message: 'Settings saved successfully' });
@@ -1538,6 +1557,32 @@ app.post('/api/test-webhook', async (req, res) => {
     res.json({ message: 'Test webhook sent successfully!' });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/test-ntfy', async (req, res) => {
+  const axios = require('axios');
+  const { ntfy_url, ntfy_topic } = req.body;
+  if (!ntfy_topic) return res.status(400).json({ error: 'ntfy topic is required' });
+  const base = (ntfy_url || 'https://ntfy.sh').replace(/\/$/, '');
+  try {
+    await axios.post(`${base}/${ntfy_topic}`, 'This is a test notification from SkyWatch', {
+      headers: { Title: '🔔 SkyWatch Test', Priority: 'default', Tags: 'white_check_mark' },
+    });
+    res.json({ message: 'Test notification sent to ntfy!' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Network discovery — scan local network for monitorable hosts
+app.post('/api/network-discovery', async (req, res) => {
+  try {
+    const hosts = await discoverNetwork();
+    res.json({ hosts });
+  } catch (error) {
+    console.error('Network discovery error:', error);
+    res.status(500).json({ error: 'Network discovery failed', details: error.message });
   }
 });
 

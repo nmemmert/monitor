@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { formatLocalTime } from './utils/timeUtils';
 import './CommandCenterPages.css';
@@ -10,50 +10,13 @@ function Notifications() {
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [pendingClear, setPendingClear] = useState(false);
   const itemsPerPage = 50;
+  const wsRef = useRef(null);
+  const wsReconnectTimer = useRef(null);
+  const wsReconnectDelay = useRef(1000);
 
-  useEffect(() => {
-    loadNotifications();
-    const interval = setInterval(loadNotifications, 10000);
-    
-    // Connect to WebSocket for real-time updates
-    connectWebSocket();
-    
-    return () => {
-      clearInterval(interval);
-      if (window.notificationWebSocket) {
-        window.notificationWebSocket.close();
-      }
-    };
-  }, [filter, currentPage]);
-
-  const connectWebSocket = () => {
-    try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${protocol}//${window.location.host}`);
-      
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          if (message.type === 'notification') {
-            loadNotifications();
-          }
-        } catch (error) {
-          console.error('Failed to parse WebSocket message:', error);
-        }
-      };
-      
-      ws.onclose = () => {
-        setTimeout(connectWebSocket, 5000);
-      };
-      
-      window.notificationWebSocket = ws;
-    } catch (error) {
-      console.error('Failed to connect WebSocket:', error);
-    }
-  };
-
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     setLoading(true);
     try {
       const params = {
@@ -68,11 +31,51 @@ function Notifications() {
       setUnreadCount(response.data.unreadCount);
       setTotal(response.data.total);
     } catch (error) {
-      console.error('Failed to load notifications:', error);
+      // Notifications load error handled
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, currentPage]);
+
+  const connectWebSocket = useCallback(() => {
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'notification') {
+            loadNotifications();
+          }
+        } catch (_) {}
+      };
+
+      ws.onclose = () => {
+        wsRef.current = null;
+        wsReconnectTimer.current = setTimeout(() => {
+          wsReconnectDelay.current = Math.min(wsReconnectDelay.current * 2, 30000);
+          connectWebSocket();
+        }, wsReconnectDelay.current);
+      };
+
+      ws.onopen = () => { wsReconnectDelay.current = 1000; };
+      ws.onerror = () => {};
+
+      wsRef.current = ws;
+    } catch (_) {}
+  }, [loadNotifications]);
+
+  useEffect(() => {
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 10000);
+    connectWebSocket();
+    return () => {
+      clearInterval(interval);
+      clearTimeout(wsReconnectTimer.current);
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, [filter, currentPage, loadNotifications, connectWebSocket]);
 
   const handleMarkAsRead = async (notificationId) => {
     try {
@@ -93,14 +96,13 @@ function Notifications() {
   };
 
   const handleClearAll = async () => {
-    if (!window.confirm(`Clear all ${filter} notifications?`)) return;
-    
     try {
       await axios.post('/api/notifications/clear', { type: filter });
       setCurrentPage(1);
+      setPendingClear(false);
       loadNotifications();
     } catch (error) {
-      console.error('Failed to clear notifications:', error);
+      setPendingClear(false);
     }
   };
 
@@ -135,13 +137,16 @@ function Notifications() {
         </div>
         
         {notifications.length > 0 && (
-          <button
-            className="btn btn-danger"
-            onClick={handleClearAll}
-            style={{ marginLeft: 'auto' }}
-          >
-            Clear All
-          </button>
+          pendingClear ? (
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-danger" onClick={handleClearAll}>Confirm Clear</button>
+              <button className="btn btn-secondary" onClick={() => setPendingClear(false)}>Cancel</button>
+            </div>
+          ) : (
+            <button className="btn btn-danger" onClick={() => setPendingClear(true)} style={{ marginLeft: 'auto' }}>
+              Clear All
+            </button>
+          )
         )}
       </div>
 

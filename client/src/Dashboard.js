@@ -12,6 +12,9 @@ function Dashboard() {
   const [showModal, setShowModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDiscovery, setShowDiscovery] = useState(false);
+  const [discoveryHosts, setDiscoveryHosts] = useState([]);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [editData, setEditData] = useState({});
   const [notifications, setNotifications] = useState([]);
@@ -44,6 +47,10 @@ function Dashboard() {
   const [quickFilter, setQuickFilter] = useState('all');
   const [sortKey, setSortKey] = useState('severity');
   const [renderLimit, setRenderLimit] = useState(120);
+  const [refreshInterval, setRefreshInterval] = useState(15000);
+  const [loaded, setLoaded] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
+  const [pendingBulkDelete, setPendingBulkDelete] = useState(false);
   const [groupData, setGroupData] = useState({ name: '', description: '' });
   const [selectedIds, setSelectedIds] = useState(new Set());
   const wsRef = useRef(null);
@@ -65,8 +72,9 @@ function Dashboard() {
       const response = await axios.get('/api/dashboard');
       setResources(response.data.resources);
       setGroups(response.data.groups || []);
+      setLoaded(true);
     } catch (error) {
-      // Error loading resources handled
+      setLoaded(true);
     }
   }, []);
 
@@ -87,6 +95,7 @@ function Dashboard() {
           if (message.type === 'dashboard') {
             setResources(message.data.resources || []);
             setGroups(message.data.groups || []);
+            setLoaded(true);
           } else if (message.type === 'alert') {
             const alert = message.data;
             showNotification(`Alert: ${alert.resourceName}`, alert.message, 'error');
@@ -130,14 +139,24 @@ function Dashboard() {
   }, []);
 
   useEffect(() => {
+    axios.get('/api/settings').then(res => {
+      const s = res.data;
+      if (s.items_per_page) setRenderLimit(parseInt(s.items_per_page));
+      if (s.default_sort) setSortKey(s.default_sort);
+      if (s.refresh_interval) setRefreshInterval(parseInt(s.refresh_interval));
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadResources();
     connectWebSocket();
-    const fallbackInterval = setInterval(loadResources, 15000);
+    const fallbackInterval = setInterval(loadResources, refreshInterval);
     return () => {
       clearInterval(fallbackInterval);
       clearTimeout(wsReconnectTimer.current);
       if (wsRef.current) wsRef.current.close();
     };
-  }, [connectWebSocket, loadResources]);
+  }, [connectWebSocket, loadResources, refreshInterval]);
 
   const emptyForm = {
     name: '', url: '', type: 'http', check_interval: 60000, timeout: 5000,
@@ -197,13 +216,13 @@ function Dashboard() {
   };
 
   const handleDeleteResource = async (id) => {
-    if (window.confirm('Delete this resource?')) {
-      try {
-        await axios.delete(`/api/resources/${id}`);
-        loadResources();
-      } catch (error) {
-        showNotification('Error', 'Failed to delete resource', 'error');
-      }
+    try {
+      await axios.delete(`/api/resources/${id}`);
+      setPendingDeleteId(null);
+      loadResources();
+    } catch (error) {
+      showNotification('Error', 'Failed to delete resource', 'error');
+      setPendingDeleteId(null);
     }
   };
 
@@ -228,13 +247,14 @@ function Dashboard() {
   };
 
   const handleBulkDelete = async () => {
-    if (!window.confirm(`Delete ${selectedIds.size} resource(s)?`)) return;
     try {
       await Promise.all([...selectedIds].map(id => axios.delete(`/api/resources/${id}`)));
       setSelectedIds(new Set());
+      setPendingBulkDelete(false);
       loadResources();
     } catch (error) {
       showNotification('Error', 'Some deletes failed', 'error');
+      setPendingBulkDelete(false);
     }
   };
 
@@ -264,6 +284,31 @@ function Dashboard() {
     } else {
       setSelectedIds(new Set(visibleResources.map(r => r.id)));
     }
+  };
+
+  const handleDiscover = async () => {
+    setShowDiscovery(true);
+    setDiscoveryHosts([]);
+    setDiscoveryLoading(true);
+    try {
+      const res = await axios.post('/api/network-discovery');
+      setDiscoveryHosts(res.data.hosts || []);
+    } catch (error) {
+      showNotification('Error', 'Network discovery failed', 'error');
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  };
+
+  const addDiscoveredHost = (host) => {
+    setFormData({
+      ...emptyForm,
+      name: host.hostname || host.ip,
+      url: host.suggestedUrl || '',
+      type: host.suggestedType || 'http',
+    });
+    setShowDiscovery(false);
+    setShowModal(true);
   };
 
   const handleExportCSV = async () => {
@@ -468,7 +513,14 @@ function Dashboard() {
             >
               {resource.maintenance_mode ? '✅' : '🛠'}
             </button>
-            <button className="btn-icon action-delete" title="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteResource(resource.id); }}>🗑</button>
+            {pendingDeleteId === resource.id ? (
+              <>
+                <button className="btn-icon action-delete-confirm" title="Confirm delete" onClick={(e) => { e.stopPropagation(); handleDeleteResource(resource.id); }}>✓</button>
+                <button className="btn-icon" title="Cancel" onClick={(e) => { e.stopPropagation(); setPendingDeleteId(null); }}>✕</button>
+              </>
+            ) : (
+              <button className="btn-icon action-delete" title="Delete" onClick={(e) => { e.stopPropagation(); setPendingDeleteId(resource.id); }}>🗑</button>
+            )}
           </div>
           <p className="last-check">Last: {resource.lastCheck ? formatLocalTime(resource.lastCheck) : 'Never'}</p>
         </div>
@@ -561,6 +613,7 @@ function Dashboard() {
               <div role="menu" className="actions-menu">
                 <button className="btn btn-ghost" onClick={() => { setActionsOpen(false); setShowGroupModal(true); }} role="menuitem">+ New Group</button>
                 <button className="btn btn-ghost" onClick={() => { setActionsOpen(false); setShowModal(true); }} role="menuitem">+ Add Resource</button>
+                <button className="btn btn-ghost" onClick={() => { setActionsOpen(false); handleDiscover(); }} role="menuitem">🔍 Discover Network</button>
                 <hr className="actions-menu-divider" />
                 <button className="btn btn-ghost" onClick={() => { setActionsOpen(false); handleExportCSV(); }} role="menuitem">⬇ Export CSV</button>
                 <button className="btn btn-ghost" onClick={() => { setActionsOpen(false); document.getElementById('csv-import').click(); }} role="menuitem">⬆ Import CSV</button>
@@ -588,7 +641,17 @@ function Dashboard() {
         <div className="cc-metric-card"><p className="cc-metric-label">Avg Resp</p><p className="cc-metric-value">{avgResponse}ms</p></div>
       </div>
 
-      {resources.length === 0 ? (
+      {!loaded ? (
+        <div className="resource-list">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="resource-row skeleton-row">
+              <div className="skeleton skeleton-name" />
+              <div className="skeleton skeleton-url" />
+              <div className="skeleton skeleton-badge" />
+            </div>
+          ))}
+        </div>
+      ) : resources.length === 0 ? (
         <div className="empty-state">
           <h3>No resources yet</h3>
           <p>Add your first resource to start monitoring</p>
@@ -605,8 +668,15 @@ function Dashboard() {
             <span className="bulk-count">{selectedIds.size} selected</span>
             <button className="btn btn-secondary" onClick={() => handleBulkMaintenance(true)}>Enable Maintenance</button>
             <button className="btn btn-secondary" onClick={() => handleBulkMaintenance(false)}>End Maintenance</button>
-            <button className="btn btn-danger" onClick={handleBulkDelete}>Delete Selected</button>
-            <button className="btn" onClick={() => setSelectedIds(new Set())}>Clear</button>
+            {pendingBulkDelete ? (
+              <>
+                <button className="btn btn-danger" onClick={handleBulkDelete}>Confirm Delete {selectedIds.size}</button>
+                <button className="btn" onClick={() => setPendingBulkDelete(false)}>Cancel</button>
+              </>
+            ) : (
+              <button className="btn btn-danger" onClick={() => setPendingBulkDelete(true)}>Delete Selected</button>
+            )}
+            <button className="btn" onClick={() => { setSelectedIds(new Set()); setPendingBulkDelete(false); }}>Clear</button>
           </div>
         )}
 
@@ -857,10 +927,12 @@ function Dashboard() {
                 <input type="text" value={editData.name || ''} onChange={(e) => setEditData({ ...editData, name: e.target.value })} required placeholder="e.g., Production API" />
               </div>
 
-              <div className="form-group">
-                <label>URL/Address *</label>
-                <input type="text" value={editData.url || ''} onChange={(e) => setEditData({ ...editData, url: e.target.value })} required placeholder="e.g., https://api.example.com" />
-              </div>
+              {editData.type !== 'heartbeat' && (
+                <div className="form-group">
+                  <label>URL/Address *</label>
+                  <input type="text" value={editData.url || ''} onChange={(e) => setEditData({ ...editData, url: e.target.value })} required placeholder="e.g., https://api.example.com" />
+                </div>
+              )}
 
               <div className="form-group">
                 <label>Check Type *</label>
@@ -987,6 +1059,60 @@ function Dashboard() {
                 <button type="submit" className="btn btn-primary">Save Changes</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showDiscovery && (
+        <div className="modal-overlay" onClick={() => setShowDiscovery(false)}>
+          <div className="modal" style={{ maxWidth: '640px' }} onClick={(e) => e.stopPropagation()}>
+            <h2>🔍 Network Discovery</h2>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>
+              Scanning your local network for reachable hosts and HTTP services…
+            </p>
+
+            {discoveryLoading && (
+              <div className="discovery-scanning">
+                <div className="discovery-spinner" />
+                <span>Scanning — this takes 10–20 seconds</span>
+              </div>
+            )}
+
+            {!discoveryLoading && discoveryHosts.length === 0 && (
+              <div className="cc-empty">No hosts found on the local network.</div>
+            )}
+
+            {!discoveryLoading && discoveryHosts.length > 0 && (
+              <div className="discovery-list">
+                {discoveryHosts.map((host) => (
+                  <div key={host.ip} className="discovery-row">
+                    <div className="discovery-info">
+                      <span className="discovery-ip">{host.ip}</span>
+                      {host.hostname && <span className="discovery-hostname">{host.hostname}</span>}
+                      {host.suggestedUrl && (
+                        <span className="discovery-url">{host.suggestedUrl}</span>
+                      )}
+                      {host.openPorts.length > 0 && (
+                        <span className="discovery-ports">ports: {host.openPorts.join(', ')}</span>
+                      )}
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => addDiscoveredHost(host)}
+                    >
+                      + Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="form-actions" style={{ marginTop: '1rem' }}>
+              {!discoveryLoading && (
+                <button className="btn btn-secondary" onClick={handleDiscover}>↺ Rescan</button>
+              )}
+              <button className="btn" onClick={() => setShowDiscovery(false)}>Close</button>
+            </div>
           </div>
         </div>
       )}

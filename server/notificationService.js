@@ -21,12 +21,16 @@ class NotificationService {
       webhook_enabled: process.env.WEBHOOK_ENABLED === 'true',
       webhook_url: process.env.WEBHOOK_URL,
       webhook_template: process.env.WEBHOOK_TEMPLATE || '',
+      ntfy_enabled: process.env.NTFY_ENABLED === 'true',
+      ntfy_url: process.env.NTFY_URL || 'https://ntfy.sh',
+      ntfy_topic: process.env.NTFY_TOPIC || '',
     });
   }
 
   setConfig(config) {
     this.emailEnabled = !!config.email_enabled;
     this.webhookEnabled = !!config.webhook_enabled;
+    this.ntfyEnabled = !!config.ntfy_enabled;
     this.config = { ...this.config, ...config };
 
     // Recreate transporter when email config changes; skip if incomplete
@@ -103,6 +107,10 @@ class NotificationService {
       promises.push(this.sendWebhook(resource, message, incident.type));
     }
 
+    if (this.ntfyEnabled) {
+      promises.push(this.sendNtfy(resource, incident.type));
+    }
+
     await Promise.allSettled(promises);
 
     // Save notification to in-app notification center
@@ -165,6 +173,20 @@ class NotificationService {
     await this.sendGroupedEmail(pendingAlerts);
     if (this.webhookEnabled) {
       await this.sendGroupedWebhook(pendingAlerts);
+    }
+    if (this.ntfyEnabled) {
+      const ntfyUrl = this.config.ntfy_url || 'https://ntfy.sh';
+      const ntfyTopic = this.config.ntfy_topic;
+      if (ntfyTopic) {
+        try {
+          await axios.post(`${ntfyUrl.replace(/\/$/, '')}/${ntfyTopic}`,
+            pendingAlerts.map(({ resource, incident }) =>
+              `${incident.type === 'started' ? '🔴' : '🟢'} ${resource.name}`
+            ).join('\n'),
+            { headers: { Title: `⚠️ ${pendingAlerts.length} monitors changed`, Priority: 'high', Tags: 'warning' } }
+          );
+        } catch (_) {}
+      }
     }
   }
 
@@ -418,6 +440,31 @@ class NotificationService {
       await axios.post(webhookUrl, payload);
     } catch (error) {
       // Webhook error handled silently
+    }
+  }
+
+  async sendNtfy(resource, type) {
+    const ntfyUrl = this.config.ntfy_url || 'https://ntfy.sh';
+    const ntfyTopic = this.config.ntfy_topic;
+    if (!ntfyTopic) return;
+
+    const isDown = type === 'started';
+    const isSlow = type === 'slow';
+    const title = isDown ? `🔴 ${resource.name} is DOWN` : isSlow ? `🟡 ${resource.name} is SLOW` : `🟢 ${resource.name} is UP`;
+    const priority = isDown ? 'high' : isSlow ? 'default' : 'low';
+    const tags = isDown ? 'red_circle,warning' : isSlow ? 'yellow_circle' : 'green_circle,white_check_mark';
+    const body = resource.url ? `${resource.url}` : resource.name;
+
+    try {
+      await axios.post(`${ntfyUrl.replace(/\/$/, '')}/${ntfyTopic}`, body, {
+        headers: {
+          Title: title,
+          Priority: priority,
+          Tags: tags,
+        },
+      });
+    } catch (error) {
+      // ntfy error handled silently
     }
   }
 }

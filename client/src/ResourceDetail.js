@@ -49,12 +49,14 @@ function ResourceDetail() {
   const [maintenanceForm, setMaintenanceForm] = useState({ start_time: '', end_time: '', reason: '' });
 
   useEffect(() => {
-    loadResource();
-    loadChecks();
-    loadIncidents();
-    loadSla();
-    loadMaintenanceWindows();
-    loadChartChecks();
+    Promise.all([
+      loadResource(),
+      loadChecks(),
+      loadIncidents(),
+      loadSla(),
+      loadMaintenanceWindows(),
+      loadChartChecks(),
+    ]).catch(() => {});
     const interval = setInterval(loadResource, 5000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps

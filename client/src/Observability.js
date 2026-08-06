@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { formatLocalTime } from './utils/timeUtils';
 import './Observability.css';
@@ -9,7 +9,6 @@ function Observability() {
   const [errors, setErrors] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditSummary, setAuditSummary] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [expandedAuditRow, setExpandedAuditRow] = useState(null);
   const [filters, setFilters] = useState({
     entityType: '',
@@ -17,16 +16,50 @@ function Observability() {
     userId: '',
     action: ''
   });
+  const wsRef = useRef(null);
+  const wsReconnectTimer = useRef(null);
+  const wsReconnectDelay = useRef(1000);
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30000); // Refresh every 30 seconds
+    const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, filters]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const connect = () => {
+      try {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}`);
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'metrics' && activeTab === 'metrics') {
+              setMetrics(msg.data);
+            }
+          } catch (_) {}
+        };
+        ws.onopen = () => { wsReconnectDelay.current = 1000; };
+        ws.onclose = () => {
+          wsRef.current = null;
+          wsReconnectTimer.current = setTimeout(() => {
+            wsReconnectDelay.current = Math.min(wsReconnectDelay.current * 2, 30000);
+            connect();
+          }, wsReconnectDelay.current);
+        };
+        ws.onerror = () => {};
+        wsRef.current = ws;
+      } catch (_) {}
+    };
+    connect();
+    return () => {
+      clearTimeout(wsReconnectTimer.current);
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, [activeTab]);
+
   const loadData = async () => {
-    setLoading(true);
     try {
       if (activeTab === 'metrics') {
         const resp = await axios.get('/api/observability/metrics');
@@ -42,7 +75,6 @@ function Observability() {
     } catch (error) {
       // Error loading data
     }
-    setLoading(false);
   };
 
   return (

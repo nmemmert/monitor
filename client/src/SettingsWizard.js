@@ -14,6 +14,9 @@ function SettingsWizard() {
     webhook_enabled: false,
     webhook_url: '',
     webhook_template: '',
+    ntfy_enabled: false,
+    ntfy_url: 'https://ntfy.sh',
+    ntfy_topic: '',
     check_interval: 60000,
     timeout: 5000,
     timezone: 'UTC',
@@ -101,9 +104,28 @@ function SettingsWizard() {
       });
       setTestResult({ success: true, message: response.data.message });
     } catch (error) {
-      setTestResult({ 
-        success: false, 
-        message: error.response?.data?.error || 'Failed to send test webhook' 
+      setTestResult({
+        success: false,
+        message: error.response?.data?.error || 'Failed to send test webhook'
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleTestNtfy = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const response = await axios.post('/api/test-ntfy', {
+        ntfy_url: settings.ntfy_url,
+        ntfy_topic: settings.ntfy_topic,
+      });
+      setTestResult({ success: true, message: response.data.message });
+    } catch (error) {
+      setTestResult({
+        success: false,
+        message: error.response?.data?.error || 'Failed to send ntfy notification',
       });
     } finally {
       setTesting(false);
@@ -332,6 +354,79 @@ function SettingsWizard() {
                 disabled={savingSection === 'Webhook'}
               >
                 {savingSection === 'Webhook' ? 'Saving...' : '💾 Save Webhook Settings'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ntfy.sh Settings */}
+      <div className="settings-section">
+        <div className="settings-header">
+          <h3>📲 ntfy.sh Push Notifications</h3>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={settings.ntfy_enabled}
+              onChange={(e) => setSettings({ ...settings, ntfy_enabled: e.target.checked })}
+            />
+            <span className="toggle-slider"></span>
+          </label>
+        </div>
+
+        {settings.ntfy_enabled && (
+          <div className="settings-form">
+            <div className="form-row">
+              <div className="form-group">
+                <label>ntfy Server URL</label>
+                <input
+                  type="url"
+                  value={settings.ntfy_url}
+                  onChange={(e) => setSettings({ ...settings, ntfy_url: e.target.value })}
+                  placeholder="https://ntfy.sh"
+                />
+                <small>Use <code>https://ntfy.sh</code> for the public server, or your self-hosted URL</small>
+              </div>
+
+              <div className="form-group">
+                <label>Topic</label>
+                <input
+                  type="text"
+                  value={settings.ntfy_topic}
+                  onChange={(e) => setSettings({ ...settings, ntfy_topic: e.target.value })}
+                  placeholder="my-skywatch-alerts"
+                />
+                <small>Subscribe to this topic in the ntfy app to receive push notifications</small>
+              </div>
+            </div>
+
+            <div className="info-box">
+              <strong>💡 Setup:</strong>
+              <ol>
+                <li>Install the <strong>ntfy</strong> app on your phone (iOS or Android)</li>
+                <li>Subscribe to your topic name above</li>
+                <li>Send a test notification to confirm it works</li>
+              </ol>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={handleTestNtfy}
+                disabled={testing || !settings.ntfy_topic}
+              >
+                {testing ? 'Sending...' : '📲 Send Test Notification'}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => handleSaveSection('ntfy', {
+                  ntfy_enabled: settings.ntfy_enabled,
+                  ntfy_url: settings.ntfy_url,
+                  ntfy_topic: settings.ntfy_topic,
+                })}
+                disabled={savingSection === 'ntfy'}
+              >
+                {savingSection === 'ntfy' ? 'Saving...' : '💾 Save ntfy Settings'}
               </button>
             </div>
           </div>
