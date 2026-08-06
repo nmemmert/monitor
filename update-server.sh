@@ -11,6 +11,15 @@ cd /opt/resource-monitor
 echo "📥 Pulling latest code..."
 git pull origin main
 
+echo "🔧 Ensuring build tools are present (needed for native modules)..."
+if command -v apt-get &>/dev/null; then
+	apt-get install -y --no-install-recommends make gcc g++ python3 2>&1 | tail -5
+elif command -v dnf &>/dev/null; then
+	dnf install -y make gcc gcc-c++ python3 2>&1 | tail -5
+elif command -v yum &>/dev/null; then
+	yum install -y make gcc gcc-c++ python3 2>&1 | tail -5
+fi
+
 echo "📦 Installing dependencies..."
 rm -rf node_modules
 
