@@ -765,9 +765,10 @@ class MonitorService {
       return null;
     }
 
-    // Return average of response times
-    const sum = checks.reduce((acc, c) => acc + (c.response_time || 0), 0);
-    return Math.round(sum / checks.length);
+    // Use P95 so the baseline reflects realistic worst-case, not the average.
+    // Threshold is 2× P95, making it very unlikely to trigger on normal variance.
+    const p95Index = Math.min(Math.floor(checks.length * 0.95), checks.length - 1);
+    return Math.round(checks[p95Index].response_time);
   }
 
   // Check if response time is anomalous

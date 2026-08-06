@@ -9,6 +9,7 @@ class Scheduler {
     this.isRunning = false;
     this.lastCheckedAt = new Map();
     this.slowAlertCooldown = new Map();
+    this.slowConsecutiveCount = new Map(); // tracks consecutive slow checks per resource
   }
 
   start() {
@@ -172,26 +173,33 @@ class Scheduler {
           pendingAlerts.push({ resource, incident, stats });
         }
 
-        // Slow alert: prefer explicit threshold, fall back to 2× computed baseline
+        // Slow alert: prefer explicit threshold, fall back to 2× P95 baseline
         const effectiveThreshold = resource.response_time_threshold ||
           (resource.response_time_baseline ? resource.response_time_baseline * 2 : null);
 
-        if (
-          result.status === 'up' &&
-          effectiveThreshold &&
-          result.response_time > effectiveThreshold &&
-          !resource.maintenance_mode
-        ) {
-          const lastSlowAlert = this.slowAlertCooldown.get(resource.id) || 0;
-          if (now - lastSlowAlert > 60 * 60 * 1000) {
-            this.slowAlertCooldown.set(resource.id, now);
-            await notificationService.sendAlert(resource, {
-              type: 'slow',
-              responseTime: result.response_time,
-              threshold: effectiveThreshold,
-              id: null,
-            });
+        if (result.status === 'up' && effectiveThreshold && !resource.maintenance_mode) {
+          if (result.response_time > effectiveThreshold) {
+            const consecutive = (this.slowConsecutiveCount.get(resource.id) || 0) + 1;
+            this.slowConsecutiveCount.set(resource.id, consecutive);
+            // Require 3 consecutive slow checks before alerting (avoids single-spike false positives)
+            if (consecutive >= 3) {
+              const lastSlowAlert = this.slowAlertCooldown.get(resource.id) || 0;
+              if (now - lastSlowAlert > 60 * 60 * 1000) {
+                this.slowAlertCooldown.set(resource.id, now);
+                await notificationService.sendAlert(resource, {
+                  type: 'slow',
+                  responseTime: result.response_time,
+                  threshold: effectiveThreshold,
+                  id: null,
+                });
+              }
+            }
+          } else {
+            // Reset consecutive counter when response time is back to normal
+            this.slowConsecutiveCount.set(resource.id, 0);
           }
+        } else if (!effectiveThreshold) {
+          this.slowConsecutiveCount.set(resource.id, 0);
         }
       } catch (error) {
         // Check error handled silently
