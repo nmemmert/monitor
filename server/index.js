@@ -734,134 +734,89 @@ app.post('/api/settings', (req, res) => {
     return res.status(400).json({ error: 'Timeout must be at least 1000ms' });
   }
 
-  const envContent = `EMAIL_ENABLED=${email_enabled || false}
-EMAIL_HOST=${email_host || 'smtp.gmail.com'}
-EMAIL_PORT=${email_port || 587}
-EMAIL_USER=${email_user || ''}
-EMAIL_PASS=${email_pass || process.env.EMAIL_PASS || ''}
-EMAIL_FROM=${email_from || ''}
-EMAIL_TO=${email_to || ''}
-WEBHOOK_ENABLED=${webhook_enabled || false}
-WEBHOOK_URL=${webhook_url || ''}
-CHECK_INTERVAL=${check_interval || 60000}
-TIMEOUT=${timeout || 5000}
-TIMEZONE=${timezone || 'UTC'}
-RETENTION_DAYS=${retention_days || 7}
-AUTO_CLEANUP_ENABLED=${auto_cleanup_enabled || false}
-CONSECUTIVE_FAILURES=${consecutive_failures || 3}
-GRACE_PERIOD=${grace_period || 300}
-DOWNTIME_THRESHOLD=${downtime_threshold || 600}
-ALERT_RETRY_COUNT=${alert_retry_count || 3}
-ALERT_RETRY_DELAY=${alert_retry_delay || 60}
-FALLBACK_WEBHOOK=${fallback_webhook || ''}
-GLOBAL_QUIET_HOURS_START=${global_quiet_hours_start || ''}
-GLOBAL_QUIET_HOURS_END=${global_quiet_hours_end || ''}
-ESCALATION_HOURS=${escalation_hours || 4}
-DEFAULT_SORT=${default_sort || 'name'}
-ITEMS_PER_PAGE=${items_per_page || 20}
-REFRESH_INTERVAL=${refresh_interval || 5000}
-THEME=dark
-NTFY_ENABLED=${ntfy_enabled || false}
-NTFY_URL=${ntfy_url || 'https://ntfy.sh'}
-NTFY_TOPIC=${ntfy_topic || ''}
-INCIDENT_FAILURE_THRESHOLD=${incident_failure_threshold || 10}
-WEBHOOK_TEMPLATE=${webhook_template || ''}
-`;
+  // Only persist keys that are explicitly present in this request.
+  // The settings UI saves one section at a time, so absent keys must be
+  // left untouched — otherwise their DB/env values get overwritten with defaults.
+  const body = req.body;
+  const present = (key) => body[key] !== undefined;
+
+  // Field → { envKey, coerce }
+  const FIELDS = {
+    email_enabled:           { env: 'EMAIL_ENABLED',           coerce: v => String(v) },
+    email_host:              { env: 'EMAIL_HOST',              coerce: v => v || '' },
+    email_port:              { env: 'EMAIL_PORT',              coerce: v => String(v || 587) },
+    email_user:              { env: 'EMAIL_USER',              coerce: v => v || '' },
+    email_pass:              { env: 'EMAIL_PASS',              coerce: v => v || process.env.EMAIL_PASS || '' },
+    email_from:              { env: 'EMAIL_FROM',              coerce: v => v || '' },
+    email_to:                { env: 'EMAIL_TO',               coerce: v => v || '' },
+    webhook_enabled:         { env: 'WEBHOOK_ENABLED',         coerce: v => String(v) },
+    webhook_url:             { env: 'WEBHOOK_URL',             coerce: v => v || '' },
+    webhook_template:        { env: 'WEBHOOK_TEMPLATE',        coerce: v => v || '' },
+    check_interval:          { env: 'CHECK_INTERVAL',          coerce: v => String(v || 60000) },
+    timeout:                 { env: 'TIMEOUT',                 coerce: v => String(v || 5000) },
+    timezone:                { env: 'TIMEZONE',                coerce: v => v || 'UTC' },
+    retention_days:          { env: 'RETENTION_DAYS',          coerce: v => String(v || 7) },
+    auto_cleanup_enabled:    { env: 'AUTO_CLEANUP_ENABLED',    coerce: v => String(v) },
+    consecutive_failures:    { env: 'CONSECUTIVE_FAILURES',    coerce: v => String(v || 3) },
+    grace_period:            { env: 'GRACE_PERIOD',            coerce: v => String(v || 300) },
+    downtime_threshold:      { env: 'DOWNTIME_THRESHOLD',      coerce: v => String(v || 600) },
+    alert_retry_count:       { env: 'ALERT_RETRY_COUNT',       coerce: v => String(v || 3) },
+    alert_retry_delay:       { env: 'ALERT_RETRY_DELAY',       coerce: v => String(v || 60) },
+    fallback_webhook:        { env: 'FALLBACK_WEBHOOK',        coerce: v => v || '' },
+    global_quiet_hours_start:{ env: 'GLOBAL_QUIET_HOURS_START',coerce: v => v || '' },
+    global_quiet_hours_end:  { env: 'GLOBAL_QUIET_HOURS_END',  coerce: v => v || '' },
+    escalation_hours:        { env: 'ESCALATION_HOURS',        coerce: v => String(v || 4) },
+    default_sort:            { env: 'DEFAULT_SORT',            coerce: v => v || 'name' },
+    items_per_page:          { env: 'ITEMS_PER_PAGE',          coerce: v => String(v || 20) },
+    refresh_interval:        { env: 'REFRESH_INTERVAL',        coerce: v => String(v || 5000) },
+    ntfy_enabled:            { env: 'NTFY_ENABLED',            coerce: v => String(v) },
+    ntfy_url:                { env: 'NTFY_URL',                coerce: v => v || 'https://ntfy.sh' },
+    ntfy_topic:              { env: 'NTFY_TOPIC',              coerce: v => v || '' },
+    incident_failure_threshold: { env: 'INCIDENT_FAILURE_THRESHOLD', coerce: v => String(v || 10) },
+  };
+
+  // Collect only the fields present in this request
+  const updates = [];
+  for (const [key, cfg] of Object.entries(FIELDS)) {
+    if (present(key)) {
+      updates.push({ key, envKey: cfg.env, value: cfg.coerce(body[key]) });
+    }
+  }
 
   try {
-    fs.writeFileSync(envPath, envContent);
+    // Update DB — only touched keys
+    const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
+    for (const u of updates) upsert.run(u.key, u.value);
 
-    // Update runtime config in process.env - these changes persist until server restart
-    process.env.TIMEZONE = timezone || 'UTC';
-    process.env.EMAIL_ENABLED = String(email_enabled);
-    process.env.EMAIL_HOST = email_host;
-    process.env.EMAIL_PORT = String(email_port);
-    process.env.EMAIL_USER = email_user;
-    process.env.EMAIL_PASS = email_pass || process.env.EMAIL_PASS || '';
-    process.env.EMAIL_FROM = email_from;
-    process.env.EMAIL_TO = email_to;
-    process.env.WEBHOOK_ENABLED = String(webhook_enabled);
-    process.env.WEBHOOK_URL = webhook_url;
-    process.env.CHECK_INTERVAL = String(check_interval);
-    process.env.TIMEOUT = String(timeout);
-    process.env.RETENTION_DAYS = String(retention_days || 7);
-    process.env.AUTO_CLEANUP_ENABLED = String(auto_cleanup_enabled);
-    process.env.CONSECUTIVE_FAILURES = String(consecutive_failures || 3);
-    process.env.GRACE_PERIOD = String(grace_period || 300);
-    process.env.DOWNTIME_THRESHOLD = String(downtime_threshold || 600);
-    process.env.ALERT_RETRY_COUNT = String(alert_retry_count || 3);
-    process.env.ALERT_RETRY_DELAY = String(alert_retry_delay || 60);
-    process.env.FALLBACK_WEBHOOK = fallback_webhook || '';
-    process.env.GLOBAL_QUIET_HOURS_START = global_quiet_hours_start || '';
-    process.env.GLOBAL_QUIET_HOURS_END = global_quiet_hours_end || '';
-    process.env.ESCALATION_HOURS = String(escalation_hours || 4);
-    process.env.DEFAULT_SORT = default_sort || 'name';
-    process.env.ITEMS_PER_PAGE = String(items_per_page || 20);
-    process.env.REFRESH_INTERVAL = String(refresh_interval || 5000);
-    process.env.THEME = 'dark';
-    process.env.NTFY_ENABLED = String(ntfy_enabled || false);
-    process.env.NTFY_URL = ntfy_url || 'https://ntfy.sh';
-    process.env.NTFY_TOPIC = ntfy_topic || '';
-    process.env.INCIDENT_FAILURE_THRESHOLD = String(incident_failure_threshold || 10);
-    process.env.WEBHOOK_TEMPLATE = webhook_template || '';
+    // Update process.env — only touched keys
+    for (const u of updates) process.env[u.envKey] = u.value;
 
-    // Also save to database for persistence
-    const settingsTable = [
-      { key: 'email_enabled', value: String(email_enabled) },
-      { key: 'email_host', value: email_host },
-      { key: 'email_port', value: String(email_port) },
-      { key: 'email_user', value: email_user },
-      { key: 'email_from', value: email_from },
-      { key: 'email_to', value: email_to },
-      { key: 'webhook_enabled', value: String(webhook_enabled) },
-      { key: 'webhook_url', value: webhook_url },
-      { key: 'webhook_template', value: webhook_template || '' },
-      { key: 'timezone', value: timezone || 'UTC' },
-      { key: 'retention_days', value: String(retention_days || 7) },
-      { key: 'check_interval', value: String(check_interval || 60000) },
-      { key: 'timeout', value: String(timeout || 5000) },
-      { key: 'consecutive_failures', value: String(consecutive_failures || 3) },
-      { key: 'grace_period', value: String(grace_period || 300) },
-      { key: 'downtime_threshold', value: String(downtime_threshold || 600) },
-      { key: 'alert_retry_count', value: String(alert_retry_count || 3) },
-      { key: 'alert_retry_delay', value: String(alert_retry_delay || 60) },
-      { key: 'fallback_webhook', value: fallback_webhook || '' },
-      { key: 'global_quiet_hours_start', value: global_quiet_hours_start || '' },
-      { key: 'global_quiet_hours_end', value: global_quiet_hours_end || '' },
-      { key: 'escalation_hours', value: String(escalation_hours || 4) },
-      { key: 'default_sort', value: default_sort || 'name' },
-      { key: 'items_per_page', value: String(items_per_page || 20) },
-      { key: 'refresh_interval', value: String(refresh_interval || 5000) },
-      { key: 'auto_cleanup_enabled', value: String(auto_cleanup_enabled || false) },
-      // theme is always dark; skip saving to avoid stale overrides
-      { key: 'ntfy_enabled', value: String(ntfy_enabled || false) },
-      { key: 'ntfy_url', value: ntfy_url || 'https://ntfy.sh' },
-      { key: 'ntfy_topic', value: ntfy_topic || '' },
-      { key: 'incident_failure_threshold', value: String(incident_failure_threshold || 10) },
-    ];
-
-    for (const setting of settingsTable) {
-      db.prepare(`
-        INSERT OR REPLACE INTO settings (key, value, updated_at)
-        VALUES (?, ?, CURRENT_TIMESTAMP)
-      `).run(setting.key, setting.value);
+    // Merge into .env file (read → patch → write) so restarts stay consistent
+    let envLines = [];
+    try { envLines = fs.readFileSync(envPath, 'utf8').split('\n'); } catch (_) {}
+    const envMap = {};
+    for (const line of envLines) {
+      const eq = line.indexOf('=');
+      if (eq > 0) envMap[line.slice(0, eq)] = line.slice(eq + 1);
     }
+    envMap['THEME'] = 'dark';
+    for (const u of updates) envMap[u.envKey] = u.value;
+    fs.writeFileSync(envPath, Object.entries(envMap).map(([k, v]) => `${k}=${v}`).join('\n') + '\n');
 
-    notificationService.setConfig({
-      email_enabled: email_enabled === true || email_enabled === 'true',
-      email_host,
-      email_port,
-      email_user,
-      email_pass: email_pass || process.env.EMAIL_PASS || '',
-      email_from,
-      email_to,
-      webhook_enabled: webhook_enabled === true || webhook_enabled === 'true',
-      webhook_url,
-      webhook_template: webhook_template || '',
-      ntfy_enabled: ntfy_enabled === true || ntfy_enabled === 'true',
-      ntfy_url: ntfy_url || 'https://ntfy.sh',
-      ntfy_topic: ntfy_topic || '',
-    });
+    // Update in-memory notification config for the fields that changed
+    const notifKeys = ['email_enabled','email_host','email_port','email_user','email_pass',
+                       'email_from','email_to','webhook_enabled','webhook_url','webhook_template',
+                       'ntfy_enabled','ntfy_url','ntfy_topic'];
+    const changedNotif = updates.filter(u => notifKeys.includes(u.key));
+    if (changedNotif.length > 0) {
+      const patch = {};
+      for (const u of changedNotif) patch[u.key] = u.value;
+      // Booleans need coercion
+      if (patch.email_enabled !== undefined) patch.email_enabled = patch.email_enabled === 'true';
+      if (patch.webhook_enabled !== undefined) patch.webhook_enabled = patch.webhook_enabled === 'true';
+      if (patch.ntfy_enabled !== undefined) patch.ntfy_enabled = patch.ntfy_enabled === 'true';
+      notificationService.setConfig(patch);
+    }
 
     res.json({ message: 'Settings saved successfully' });
   } catch (error) {
