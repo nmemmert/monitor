@@ -179,12 +179,16 @@ class NotificationService {
       const ntfyTopic = this.config.ntfy_topic;
       if (ntfyTopic) {
         try {
-          await axios.post(`${ntfyUrl.replace(/\/$/, '')}/${ntfyTopic}`,
-            pendingAlerts.map(({ resource, incident }) =>
-              `${incident.type === 'started' ? '🔴' : '🟢'} ${resource.name}`
-            ).join('\n'),
-            { headers: { Title: `⚠️ ${pendingAlerts.length} monitors changed`, Priority: 'high', Tags: 'warning' } }
-          );
+          const groupedBody = pendingAlerts.map(({ resource, incident }) =>
+            `${incident.type === 'started' ? '[DOWN]' : '[UP]'} ${resource.name}`
+          ).join('\n');
+          await axios.post(`${ntfyUrl.replace(/\/$/, '')}/${ntfyTopic}`, groupedBody, {
+            headers: {
+              Title: encodeURIComponent(`${pendingAlerts.length} monitors changed status`),
+              Priority: 'high',
+              Tags: 'warning',
+            },
+          });
         } catch (_) {}
       }
     }
@@ -450,15 +454,15 @@ class NotificationService {
 
     const isDown = type === 'started';
     const isSlow = type === 'slow';
-    const title = isDown ? `🔴 ${resource.name} is DOWN` : isSlow ? `🟡 ${resource.name} is SLOW` : `🟢 ${resource.name} is UP`;
+    const titleText = isDown ? `${resource.name} is DOWN` : isSlow ? `${resource.name} is SLOW` : `${resource.name} is UP`;
     const priority = isDown ? 'high' : isSlow ? 'default' : 'low';
     const tags = isDown ? 'red_circle,warning' : isSlow ? 'yellow_circle' : 'green_circle,white_check_mark';
-    const body = resource.url ? `${resource.url}` : resource.name;
+    const body = resource.url || resource.name;
 
     try {
       await axios.post(`${ntfyUrl.replace(/\/$/, '')}/${ntfyTopic}`, body, {
         headers: {
-          Title: title,
+          Title: encodeURIComponent(titleText),
           Priority: priority,
           Tags: tags,
         },
