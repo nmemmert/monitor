@@ -31,9 +31,14 @@ function parseHostPort(urlString, fallbackPort) {
 
 class MonitorService {
   constructor() {
-    // Keep-alive agents for pooled HTTP/S connections
+    // Keep-alive agents for pooled HTTP/S connections.
+    // Socket-level 'error' listener prevents parse errors (e.g. "Data after
+    // Connection: close") from bubbling up as uncaught exceptions when a
+    // monitored server sends a malformed response on a reused connection.
     this.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 });
+    this.httpAgent.on('error', () => {});
     this.httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 });
+    this.httpsAgent.on('error', () => {});
     
     // Circuit breaker for HTTP checks (5 failures before opening, 60s reset)
     this.httpCircuitBreaker = new CircuitBreaker(5, 60000, this.isTransientError);

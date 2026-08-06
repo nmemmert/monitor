@@ -6,6 +6,17 @@ const http = require('http');
 const { randomUUID } = require('crypto');
 require('dotenv').config();
 
+// Prevent HTTP parser errors (e.g. from keep-alive connections to monitored
+// services that send data after Connection: close) from crashing the process.
+process.on('uncaughtException', (err) => {
+  if (err.code === 'HPE_INVALID_CONSTANT' || (err.message && err.message.includes('Parse Error'))) {
+    console.error('HTTP parse error (swallowed):', err.message);
+    return;
+  }
+  console.error('Uncaught exception:', err);
+  process.exit(1);
+});
+
 const db = require('./database');
 const scheduler = require('./scheduler');
 const monitorService = require('./monitorService');
