@@ -35,6 +35,7 @@ function SettingsWizard() {
     items_per_page: 20,
     refresh_interval: 5000,
     incident_failure_threshold: 10,
+    slow_alert_consecutive: 3,
   });
 
   const [testResult, setTestResult] = useState(null);
@@ -530,6 +531,18 @@ function SettingsWizard() {
             </div>
 
             <div className="form-group">
+              <label>Slow Alert Sensitivity</label>
+              <input
+                type="number"
+                value={settings.slow_alert_consecutive || 3}
+                onChange={(e) => setSettings({ ...settings, slow_alert_consecutive: parseInt(e.target.value) })}
+                min="1"
+                max="20"
+              />
+              <small>Consecutive slow checks required before alerting — 1 = any spike, 3 = default, 5+ = only sustained slowness</small>
+            </div>
+
+            <div className="form-group">
               <label>Incident Failure Threshold</label>
               <input
                 type="number"
@@ -579,6 +592,7 @@ function SettingsWizard() {
               grace_period: settings.grace_period,
               downtime_threshold: settings.downtime_threshold,
               incident_failure_threshold: settings.incident_failure_threshold,
+              slow_alert_consecutive: settings.slow_alert_consecutive,
             })}
             disabled={savingSection === 'Monitoring'}
           >

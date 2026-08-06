@@ -147,6 +147,7 @@ function buildSettingsFromDb(dbSettings = {}) {
     ntfy_url: dbSettings.ntfy_url || process.env.NTFY_URL || 'https://ntfy.sh',
     ntfy_topic: dbSettings.ntfy_topic || process.env.NTFY_TOPIC || '',
     incident_failure_threshold: parseInt(dbSettings.incident_failure_threshold || process.env.INCIDENT_FAILURE_THRESHOLD) || 10,
+    slow_alert_consecutive: parseInt(dbSettings.slow_alert_consecutive || process.env.SLOW_ALERT_CONSECUTIVE) || 3,
     webhook_template: dbSettings.webhook_template || process.env.WEBHOOK_TEMPLATE || '',
   };
 }
@@ -773,6 +774,7 @@ app.post('/api/settings', (req, res) => {
     ntfy_url:                { env: 'NTFY_URL',                coerce: v => v || 'https://ntfy.sh' },
     ntfy_topic:              { env: 'NTFY_TOPIC',              coerce: v => v || '' },
     incident_failure_threshold: { env: 'INCIDENT_FAILURE_THRESHOLD', coerce: v => String(v || 10) },
+    slow_alert_consecutive:    { env: 'SLOW_ALERT_CONSECUTIVE',    coerce: v => String(v || 3) },
   };
 
   // Collect only the fields present in this request

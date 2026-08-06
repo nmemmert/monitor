@@ -181,8 +181,9 @@ class Scheduler {
           if (result.response_time > effectiveThreshold) {
             const consecutive = (this.slowConsecutiveCount.get(resource.id) || 0) + 1;
             this.slowConsecutiveCount.set(resource.id, consecutive);
-            // Require 3 consecutive slow checks before alerting (avoids single-spike false positives)
-            if (consecutive >= 3) {
+            const slowAlertConsecutiveSetting = db.prepare(`SELECT value FROM settings WHERE key = 'slow_alert_consecutive'`).get();
+            const slowAlertConsecutive = parseInt(slowAlertConsecutiveSetting?.value) || 3;
+            if (consecutive >= slowAlertConsecutive) {
               const lastSlowAlert = this.slowAlertCooldown.get(resource.id) || 0;
               if (now - lastSlowAlert > 60 * 60 * 1000) {
                 this.slowAlertCooldown.set(resource.id, now);
