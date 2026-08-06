@@ -22,8 +22,8 @@ function Dashboard() {
     name: '',
     url: '',
     type: 'http',
-    check_interval: 60000,
-    timeout: 5000,
+    check_interval: null,
+    timeout: null,
     group_id: null,
     http_keyword: '',
     http_headers: '',
@@ -48,6 +48,8 @@ function Dashboard() {
   const [sortKey, setSortKey] = useState('severity');
   const [renderLimit, setRenderLimit] = useState(120);
   const [refreshInterval, setRefreshInterval] = useState(15000);
+  const [globalCheckInterval, setGlobalCheckInterval] = useState(60000);
+  const [globalTimeout, setGlobalTimeout] = useState(5000);
   const [loaded, setLoaded] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [pendingBulkDelete, setPendingBulkDelete] = useState(false);
@@ -144,6 +146,8 @@ function Dashboard() {
       if (s.items_per_page) setRenderLimit(parseInt(s.items_per_page));
       if (s.default_sort) setSortKey(s.default_sort);
       if (s.refresh_interval) setRefreshInterval(parseInt(s.refresh_interval));
+      if (s.check_interval) setGlobalCheckInterval(parseInt(s.check_interval));
+      if (s.timeout) setGlobalTimeout(parseInt(s.timeout));
     }).catch(() => {});
   }, []);
 
@@ -159,7 +163,7 @@ function Dashboard() {
   }, [connectWebSocket, loadResources, refreshInterval]);
 
   const emptyForm = {
-    name: '', url: '', type: 'http', check_interval: 60000, timeout: 5000,
+    name: '', url: '', type: 'http', check_interval: null, timeout: null,
     group_id: null, http_keyword: '', http_headers: '', quiet_hours_start: '',
     quiet_hours_end: '', cert_expiry_days: 30, sla_target: 99.9, email_to: '',
     maintenance_mode: false, tags: '', consecutive_failures_threshold: 1,
@@ -825,13 +829,15 @@ function Dashboard() {
 
               <div className="form-group">
                 <label>Check Interval (ms)</label>
-                <input type="number" value={formData.check_interval} onChange={(e) => setFormData({ ...formData, check_interval: parseInt(e.target.value) })} min="10000" />
+                <input type="number" value={formData.check_interval ?? ''} placeholder={`${globalCheckInterval} (global default)`} onChange={(e) => setFormData({ ...formData, check_interval: e.target.value ? parseInt(e.target.value) : null })} min="10000" />
+                <small>Leave empty to use global setting ({globalCheckInterval}ms)</small>
               </div>
 
               {formData.type !== 'heartbeat' && (
                 <div className="form-group">
                   <label>Timeout (ms)</label>
-                  <input type="number" value={formData.timeout} onChange={(e) => setFormData({ ...formData, timeout: parseInt(e.target.value) })} min="1000" />
+                  <input type="number" value={formData.timeout ?? ''} placeholder={`${globalTimeout} (global default)`} onChange={(e) => setFormData({ ...formData, timeout: e.target.value ? parseInt(e.target.value) : null })} min="1000" />
+                  <small>Leave empty to use global setting ({globalTimeout}ms)</small>
                 </div>
               )}
 
@@ -965,12 +971,14 @@ function Dashboard() {
 
               <div className="form-group">
                 <label>Check Interval (ms)</label>
-                <input type="number" value={editData.check_interval || 60000} onChange={(e) => setEditData({ ...editData, check_interval: parseInt(e.target.value) })} min="10000" />
+                <input type="number" value={editData.check_interval ?? ''} placeholder={`${globalCheckInterval} (global default)`} onChange={(e) => setEditData({ ...editData, check_interval: e.target.value ? parseInt(e.target.value) : null })} min="10000" />
+                <small>Leave empty to use global setting ({globalCheckInterval}ms)</small>
               </div>
 
               <div className="form-group">
                 <label>Timeout (ms)</label>
-                <input type="number" value={editData.timeout || 5000} onChange={(e) => setEditData({ ...editData, timeout: parseInt(e.target.value) })} min="1000" />
+                <input type="number" value={editData.timeout ?? ''} placeholder={`${globalTimeout} (global default)`} onChange={(e) => setEditData({ ...editData, timeout: e.target.value ? parseInt(e.target.value) : null })} min="1000" />
+                <small>Leave empty to use global setting ({globalTimeout}ms)</small>
               </div>
 
               {(editData.type === 'http' || editData.type === 'https' || editData.type === 'health') && (

@@ -343,7 +343,7 @@ app.get('/api/resources/:id', (req, res) => {
 
 // Create resource
 app.post('/api/resources', (req, res) => {
-  const { name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold, http_method, http_body } = req.body;
+  const { name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold, http_method, http_body, tags } = req.body;
 
   const validationError = validateResourceBody(req.body);
   if (validationError) return res.status(400).json({ error: validationError });
@@ -354,8 +354,8 @@ app.post('/api/resources', (req, res) => {
     const effectiveUrl = isHeartbeat ? `heartbeat://${name}` : url;
 
     const stmt = db.prepare(`
-      INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_token, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold, http_method, http_body)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO resources (name, url, type, check_interval, timeout, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_token, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold, http_method, http_body, tags)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -374,13 +374,14 @@ app.post('/api/resources', (req, res) => {
       email_to || null,
       maintenance_mode ? 1 : 0,
       retention_days || null,
-      is_public !== false ? 1 : 0,
+      (is_public === false || is_public === 0) ? 0 : 1,
       token,
       heartbeat_timeout || 300000,
       consecutive_failures_threshold || 1,
       response_time_threshold || null,
       http_method || 'GET',
-      http_body || null
+      http_body || null,
+      tags || null
     );
 
     // Invalidate related cache entries
@@ -401,7 +402,7 @@ app.post('/api/resources', (req, res) => {
 
 // Update resource
 app.put('/api/resources/:id', (req, res) => {
-  const { name, url, type, check_interval, timeout, enabled, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold, http_method, http_body } = req.body;
+  const { name, url, type, check_interval, timeout, enabled, group_id, http_keyword, http_headers, quiet_hours_start, quiet_hours_end, cert_expiry_days, sla_target, email_to, maintenance_mode, retention_days, is_public, heartbeat_timeout, consecutive_failures_threshold, response_time_threshold, http_method, http_body, tags } = req.body;
 
   const validationError = validateResourceBody(req.body);
   if (validationError) return res.status(400).json({ error: validationError });
@@ -412,7 +413,7 @@ app.put('/api/resources/:id', (req, res) => {
 
   const stmt = db.prepare(`
     UPDATE resources
-    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?, http_keyword = ?, http_headers = ?, quiet_hours_start = ?, quiet_hours_end = ?, cert_expiry_days = ?, sla_target = ?, email_to = ?, maintenance_mode = ?, retention_days = ?, is_public = ?, heartbeat_timeout = ?, consecutive_failures_threshold = ?, response_time_threshold = ?, http_method = ?, http_body = ?
+    SET name = ?, url = ?, type = ?, check_interval = ?, timeout = ?, enabled = ?, group_id = ?, http_keyword = ?, http_headers = ?, quiet_hours_start = ?, quiet_hours_end = ?, cert_expiry_days = ?, sla_target = ?, email_to = ?, maintenance_mode = ?, retention_days = ?, is_public = ?, heartbeat_timeout = ?, consecutive_failures_threshold = ?, response_time_threshold = ?, http_method = ?, http_body = ?, tags = ?
     WHERE id = ?
   `);
 
@@ -433,12 +434,13 @@ app.put('/api/resources/:id', (req, res) => {
     email_to || null,
     maintenance_mode ? 1 : 0,
     retention_days || null,
-    is_public !== false ? 1 : 0,
+    (is_public === false || is_public === 0) ? 0 : 1,
     heartbeat_timeout || 300000,
     consecutive_failures_threshold || 1,
     response_time_threshold || null,
     http_method || 'GET',
     http_body || null,
+    tags || null,
     req.params.id
   );
 

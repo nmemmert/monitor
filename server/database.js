@@ -333,4 +333,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_resources_heartbeat_token ON resources(heartbeat_token);
 `);
 
+// One-time migration: null out per-resource check_interval and timeout so all resources
+// inherit from the global monitoring settings. Runs once, tracked by a settings flag.
+try {
+  const alreadyMigrated = db.prepare("SELECT value FROM settings WHERE key = 'migrated_global_defaults_v1'").get();
+  if (!alreadyMigrated) {
+    db.prepare("UPDATE resources SET check_interval = NULL, timeout = NULL").run();
+    db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('migrated_global_defaults_v1', 'true')").run();
+  }
+} catch (e) {}
+
 module.exports = db;

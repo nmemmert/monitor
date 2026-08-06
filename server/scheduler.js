@@ -121,6 +121,12 @@ class Scheduler {
   async runChecks() {
     const resources = db.prepare(`SELECT * FROM resources WHERE enabled = 1`).all();
 
+    // Read global defaults once per cycle so per-resource nulls inherit correctly
+    const globalIntervalRow = db.prepare(`SELECT value FROM settings WHERE key = 'check_interval'`).get();
+    const globalTimeoutRow  = db.prepare(`SELECT value FROM settings WHERE key = 'timeout'`).get();
+    const globalCheckInterval = parseInt(globalIntervalRow?.value) || 60000;
+    const globalTimeout       = parseInt(globalTimeoutRow?.value)  || 5000;
+
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const jitter = (maxMs = 1500) => Math.floor(Math.random() * maxMs);
     const baseSpacingMs = 250;
@@ -129,16 +135,21 @@ class Scheduler {
     const pendingAlerts = [];
 
     const tasks = resources.map((resource, index) => (async () => {
-      // Honour per-resource check_interval — skip if not yet due
+      // Honour per-resource check_interval, falling back to global setting
       const now = Date.now();
       const lastChecked = this.lastCheckedAt.get(resource.id) || 0;
-      const interval = resource.check_interval || 60000;
+      const interval = resource.check_interval || globalCheckInterval;
       if (now - lastChecked < interval) return;
       this.lastCheckedAt.set(resource.id, now);
 
+      // Resolve effective timeout: per-resource override or global default
+      const effectiveResource = resource.timeout
+        ? resource
+        : { ...resource, timeout: globalTimeout };
+
       await sleep(index * baseSpacingMs + jitter());
       try {
-        const result = await monitorService.checkResource(resource);
+        const result = await monitorService.checkResource(effectiveResource);
         monitorService.saveCheck(result);
 
         // Rolling cap per resource (configurable via settings; default 10000)
