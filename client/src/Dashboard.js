@@ -15,6 +15,8 @@ function Dashboard() {
   const [showDiscovery, setShowDiscovery] = useState(false);
   const [discoveryHosts, setDiscoveryHosts] = useState([]);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoverySubnet, setDiscoverySubnet] = useState('');
+  const [localSubnets, setLocalSubnets] = useState([]);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [editData, setEditData] = useState({});
   const [notifications, setNotifications] = useState([]);
@@ -290,12 +292,14 @@ function Dashboard() {
     }
   };
 
-  const handleDiscover = async () => {
+  const handleDiscover = async (subnet = null) => {
     setShowDiscovery(true);
     setDiscoveryHosts([]);
     setDiscoveryLoading(true);
+    // Fetch local subnets for the quick-select buttons (fire-and-forget)
+    axios.get('/api/network-subnets').then(r => setLocalSubnets(r.data.subnets || [])).catch(() => {});
     try {
-      const res = await axios.post('/api/network-discovery');
+      const res = await axios.post('/api/network-discovery', { subnet: subnet || discoverySubnet || null });
       setDiscoveryHosts(res.data.hosts || []);
     } catch (error) {
       showNotification('Error', 'Network discovery failed', 'error');
@@ -1076,8 +1080,50 @@ function Dashboard() {
           <div className="modal" style={{ maxWidth: '640px' }} onClick={(e) => e.stopPropagation()}>
             <h2>🔍 Network Discovery</h2>
             <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>
-              Scanning your local network for reachable hosts and HTTP services…
+              Scan a network range for reachable hosts and HTTP services.
             </p>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <input
+                  type="text"
+                  value={discoverySubnet}
+                  onChange={(e) => setDiscoverySubnet(e.target.value)}
+                  placeholder="e.g. 192.168.1.0/24  (leave empty to auto-detect)"
+                  style={{ flex: 1, padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: '0.9rem' }}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={() => handleDiscover(discoverySubnet || null)}
+                  disabled={discoveryLoading}
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  {discoveryLoading ? 'Scanning…' : '🔍 Scan'}
+                </button>
+              </div>
+              {localSubnets.length > 0 && (
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', alignSelf: 'center' }}>Quick:</span>
+                  {localSubnets.map(s => s.prefix && (
+                    <button
+                      key={s.prefix}
+                      className="btn"
+                      style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem' }}
+                      onClick={() => { setDiscoverySubnet(s.prefix); handleDiscover(s.prefix); }}
+                    >
+                      {s.prefix}
+                    </button>
+                  ))}
+                  <button
+                    className="btn"
+                    style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem' }}
+                    onClick={() => { setDiscoverySubnet(''); handleDiscover(null); }}
+                  >
+                    Auto-detect
+                  </button>
+                </div>
+              )}
+            </div>
 
             {discoveryLoading && (
               <div className="discovery-scanning">

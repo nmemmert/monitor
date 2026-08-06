@@ -13,7 +13,7 @@ const notificationService = require('./notificationService');
 const cache = require('./cache');
 const security = require('./securityMiddleware');
 const metrics = require('./metrics');
-const { discoverNetwork } = require('./networkDiscovery');
+const { discoverNetwork, getLocalSubnets } = require('./networkDiscovery');
 const auditLog = require('./auditLog');
 
 // Initialize notifications table if it doesn't exist
@@ -1541,11 +1541,21 @@ app.post('/api/test-ntfy', async (req, res) => {
 // Network discovery — scan local network for monitorable hosts
 app.post('/api/network-discovery', async (req, res) => {
   try {
-    const hosts = await discoverNetwork();
+    const { subnet } = req.body || {};
+    const hosts = await discoverNetwork(subnet || null);
     res.json({ hosts });
   } catch (error) {
     console.error('Network discovery error:', error);
     res.status(500).json({ error: 'Network discovery failed', details: error.message });
+  }
+});
+
+// Return detected local subnets so the UI can offer them as quick-select options
+app.get('/api/network-subnets', (req, res) => {
+  try {
+    res.json({ subnets: getLocalSubnets() });
+  } catch (e) {
+    res.json({ subnets: [] });
   }
 });
 

@@ -101,20 +101,29 @@ async function getArpHosts() {
   });
 }
 
-async function discoverNetwork() {
-  const subnets = getLocalSubnets();
+async function discoverNetwork(customSubnet = null) {
   const arpHosts = await getArpHosts();
   const arpIps = new Set(arpHosts.map(h => h.ip));
 
-  // Collect all IPs to scan: ARP table + subnet range
   const allIps = new Map();
-  for (const h of arpHosts) allIps.set(h.ip, { ip: h.ip, hostname: h.hostname });
 
-  for (const subnet of subnets) {
-    if (!subnet.prefix) continue;
-    const range = subnetToRange(subnet.prefix);
-    for (const ip of range) {
-      if (!allIps.has(ip)) allIps.set(ip, { ip, hostname: null });
+  if (customSubnet) {
+    // Scan the user-specified subnet only (no ARP seeding, still probe all IPs in range)
+    const range = subnetToRange(customSubnet);
+    for (const ip of range) allIps.set(ip, { ip, hostname: null });
+    // Supplement with ARP hostnames for any IPs that happen to be in the ARP table
+    for (const h of arpHosts) {
+      if (allIps.has(h.ip) && h.hostname) allIps.get(h.ip).hostname = h.hostname;
+    }
+  } else {
+    // Auto-detect: ARP table + all local subnets
+    for (const h of arpHosts) allIps.set(h.ip, { ip: h.ip, hostname: h.hostname });
+    for (const subnet of getLocalSubnets()) {
+      if (!subnet.prefix) continue;
+      const range = subnetToRange(subnet.prefix);
+      for (const ip of range) {
+        if (!allIps.has(ip)) allIps.set(ip, { ip, hostname: null });
+      }
     }
   }
 
