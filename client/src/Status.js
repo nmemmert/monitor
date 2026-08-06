@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { formatLocalTime } from './utils/timeUtils';
 import './Status.css';
 
 function Status() {
@@ -28,14 +29,6 @@ function Status() {
       // Status load error handled
     } finally {
       setLoading(false);
-    }
-  };
-
-  const formatLocalTime = (timestamp) => {
-    try {
-      return new Date(timestamp).toLocaleString();
-    } catch {
-      return timestamp;
     }
   };
 

@@ -9,6 +9,21 @@ export const getCurrentTimezone = () => {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 };
 
+const getServerTimezone = () => {
+  try {
+    const tz = localStorage.getItem('serverTimezone');
+    const ts = localStorage.getItem('serverTimezoneTime');
+    if (tz && ts && (Date.now() - parseInt(ts)) < 3600000 && tz !== 'null' && tz !== 'undefined' && tz.trim() !== '') {
+      return tz.replace(/^["']|["']$/g, '').trim();
+    }
+    if (tz) {
+      localStorage.removeItem('serverTimezone');
+      localStorage.removeItem('serverTimezoneTime');
+    }
+  } catch (_) {}
+  return null;
+};
+
 /**
  * Format a timestamp to local time string with timezone info
  * Uses server timezone from localStorage if available, otherwise browser timezone
@@ -23,40 +38,19 @@ export const formatLocalTime = (timestamp, options = {}) => {
   }
   
   const date = new Date(ts);
-  
-  // Try to get server timezone from settings API response (cached in localStorage)
-  let timeZone;
-  try {
-    const cachedSettings = localStorage.getItem('serverTimezone');
-    const cacheTime = localStorage.getItem('serverTimezoneTime');
-    const now = Date.now();
-    // Invalidate cache every 1 hour
-    if (cachedSettings && cacheTime && (now - parseInt(cacheTime)) < 3600000 && cachedSettings !== 'null' && cachedSettings !== 'undefined' && cachedSettings.trim() !== '') {
-      // Remove any quotes that might be in the string
-      timeZone = cachedSettings.replace(/^["']|["']$/g, '').trim();
-    } else if (cachedSettings) {
-      // Clear stale cache
-      localStorage.removeItem('serverTimezone');
-      localStorage.removeItem('serverTimezoneTime');
-    }
-  } catch (e) {
-    // Timezone load error handled silently
-  }
-  
+  const tz = getServerTimezone();
+
   const defaultOptions = {
     year: 'numeric',
-    month: 'short', 
+    month: 'short',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    timeZoneName: 'short'
+    timeZoneName: 'short',
+    ...(tz ? { timeZone: tz } : {})
   };
-  
-  if (timeZone) {
-    defaultOptions.timeZone = timeZone;
-  }
-  
+
   return date.toLocaleString('en-US', { ...defaultOptions, ...options });
 };
 
@@ -65,15 +59,17 @@ export const formatLocalTime = (timestamp, options = {}) => {
  */
 export const formatLocalTimeOnly = (timestamp, options = {}) => {
   if (!timestamp) return 'Never';
-  
+
   const date = new Date(timestamp);
+  const tz = getServerTimezone();
   const defaultOptions = {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    timeZoneName: 'short'
+    timeZoneName: 'short',
+    ...(tz ? { timeZone: tz } : {})
   };
-  
+
   return date.toLocaleTimeString('en-US', { ...defaultOptions, ...options });
 };
 
@@ -83,26 +79,18 @@ export const formatLocalTimeOnly = (timestamp, options = {}) => {
  */
 export const formatChartTime = (timestamp) => {
   if (!timestamp) return '';
-  
+
   const date = new Date(timestamp);
   const now = new Date();
   const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
-  
-  // If within last 24 hours, show time only
+  const tz = getServerTimezone();
+  const tzOpt = tz ? { timeZone: tz } : {};
+
   if (diffDays === 0) {
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', ...tzOpt });
   }
-  
-  // Otherwise show date and time
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+
+  return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', ...tzOpt });
 };
 
 /**

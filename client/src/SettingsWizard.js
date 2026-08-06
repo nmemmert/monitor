@@ -61,6 +61,10 @@ function SettingsWizard() {
     setSavedMessage(null);
     try {
       await axios.post('/api/settings', sectionData);
+      if (sectionData.timezone) {
+        localStorage.setItem('serverTimezone', sectionData.timezone);
+        localStorage.setItem('serverTimezoneTime', Date.now().toString());
+      }
       setSavedMessage({ section: sectionName, success: true });
       // Clear message after 3 seconds
       setTimeout(() => setSavedMessage(null), 3000);
