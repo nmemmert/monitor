@@ -1566,12 +1566,12 @@ app.post('/api/test-ntfy', async (req, res) => {
   if (!ntfy_topic) return res.status(400).json({ error: 'ntfy topic is required' });
   const base = (ntfy_url || 'https://ntfy.sh').replace(/\/$/, '');
   try {
-    await axios.post(`${base}/${ntfy_topic}`, 'This is a test notification from SkyWatch', {
-      headers: {
-        Title: encodeURIComponent('SkyWatch Test'),
-        Priority: 'default',
-        Tags: 'white_check_mark',
-      },
+    await axios.post(`${base}/`, {
+      topic: ntfy_topic,
+      title: '🔔 SkyWatch Test',
+      message: 'This is a test notification from SkyWatch',
+      priority: 3,
+      tags: ['white_check_mark'],
     });
     res.json({ message: 'Test notification sent to ntfy!' });
   } catch (error) {

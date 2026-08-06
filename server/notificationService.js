@@ -179,15 +179,14 @@ class NotificationService {
       const ntfyTopic = this.config.ntfy_topic;
       if (ntfyTopic) {
         try {
-          const groupedBody = pendingAlerts.map(({ resource, incident }) =>
-            `${incident.type === 'started' ? '[DOWN]' : '[UP]'} ${resource.name}`
-          ).join('\n');
-          await axios.post(`${ntfyUrl.replace(/\/$/, '')}/${ntfyTopic}`, groupedBody, {
-            headers: {
-              Title: encodeURIComponent(`${pendingAlerts.length} monitors changed status`),
-              Priority: 'high',
-              Tags: 'warning',
-            },
+          await axios.post(`${ntfyUrl.replace(/\/$/, '')}/`, {
+            topic: ntfyTopic,
+            title: `⚠️ ${pendingAlerts.length} monitors changed status`,
+            message: pendingAlerts.map(({ resource, incident }) =>
+              `${incident.type === 'started' ? '🔴' : '🟢'} ${resource.name}`
+            ).join('\n'),
+            priority: 4,
+            tags: ['warning'],
           });
         } catch (_) {}
       }
@@ -454,18 +453,17 @@ class NotificationService {
 
     const isDown = type === 'started';
     const isSlow = type === 'slow';
-    const titleText = isDown ? `${resource.name} is DOWN` : isSlow ? `${resource.name} is SLOW` : `${resource.name} is UP`;
-    const priority = isDown ? 'high' : isSlow ? 'default' : 'low';
-    const tags = isDown ? 'red_circle,warning' : isSlow ? 'yellow_circle' : 'green_circle,white_check_mark';
-    const body = resource.url || resource.name;
+    const title = isDown ? `🔴 ${resource.name} is DOWN` : isSlow ? `🟡 ${resource.name} is SLOW` : `🟢 ${resource.name} is UP`;
+    const priority = isDown ? 4 : isSlow ? 3 : 2;
+    const tags = isDown ? ['red_circle', 'warning'] : isSlow ? ['yellow_circle'] : ['green_circle', 'white_check_mark'];
 
     try {
-      await axios.post(`${ntfyUrl.replace(/\/$/, '')}/${ntfyTopic}`, body, {
-        headers: {
-          Title: encodeURIComponent(titleText),
-          Priority: priority,
-          Tags: tags,
-        },
+      await axios.post(`${ntfyUrl.replace(/\/$/, '')}/`, {
+        topic: ntfyTopic,
+        title,
+        message: resource.url || resource.name,
+        priority,
+        tags,
       });
     } catch (error) {
       // ntfy error handled silently
