@@ -6,8 +6,8 @@ const http = require('http');
 const { randomUUID } = require('crypto');
 require('dotenv').config();
 
-// Prevent HTTP parser errors (e.g. from keep-alive connections to monitored
-// services that send data after Connection: close) from crashing the process.
+// Prevent HTTP parser errors (e.g. "Data after Connection: close") and other
+// transient async errors from crashing the process.
 process.on('uncaughtException', (err) => {
   if (err.code === 'HPE_INVALID_CONSTANT' || (err.message && err.message.includes('Parse Error'))) {
     console.error('HTTP parse error (swallowed):', err.message);
@@ -15,6 +15,15 @@ process.on('uncaughtException', (err) => {
   }
   console.error('Uncaught exception:', err);
   process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  if (msg.includes('Parse Error')) {
+    console.error('HTTP parse error (swallowed):', msg);
+    return;
+  }
+  console.error('Unhandled rejection:', reason);
 });
 
 const db = require('./database');
