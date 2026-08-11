@@ -2170,7 +2170,7 @@ app.post('/api/resources/import', express.text({ type: 'text/csv' }), (req, res)
 
 // ===== Agent API =====
 
-// Serve the agent install script so remote hosts can curl it
+// Serve the agent daemon script
 app.get('/api/agents/script', (req, res) => {
   const fs = require('fs');
   const scriptPath = path.join(__dirname, '../agent/skywatch-agent.sh');
@@ -2180,6 +2180,19 @@ app.get('/api/agents/script', (req, res) => {
     res.sendFile(scriptPath);
   } else {
     res.status(404).json({ error: 'Agent script not found on this server' });
+  }
+});
+
+// Serve the installer script
+app.get('/api/agents/installer', (req, res) => {
+  const fs = require('fs');
+  const installerPath = path.join(__dirname, '../agent/install-agent.sh');
+  if (fs.existsSync(installerPath)) {
+    res.setHeader('Content-Type', 'text/x-sh');
+    res.setHeader('Content-Disposition', 'attachment; filename="install-agent.sh"');
+    res.sendFile(installerPath);
+  } else {
+    res.status(404).json({ error: 'Installer script not found on this server' });
   }
 });
 

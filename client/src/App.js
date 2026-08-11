@@ -10,6 +10,7 @@ import SLA from './SLA';
 import Status from './Status';
 import Observability from './Observability';
 import Notifications from './Notifications';
+import Agents from './Agents';
 
 function Navbar() {
   const [notificationsConfigured, setNotificationsConfigured] = useState(false);
@@ -43,6 +44,7 @@ function Navbar() {
             <Link to="/history" className="nav-link">History</Link>
             <Link to="/sla" className="nav-link">SLA</Link>
             <Link to="/observability" className="nav-link">Observability</Link>
+            <Link to="/agents" className="nav-link">Agents</Link>
             <Link to="/notifications" className="nav-link">Notifications</Link>
             <Link to="/status" className="nav-link" target="_blank" rel="noreferrer">Status</Link>
             <Link to="/settings" className="nav-link settings-link">
@@ -75,6 +77,7 @@ function App() {
           <Route path="/settings" element={<div className="container"><SettingsWizard /></div>} />
           <Route path="/status" element={<Status />} />
           <Route path="/observability" element={<Observability />} />
+          <Route path="/agents" element={<Agents />} />
           <Route path="/notifications" element={<Notifications />} />
         </Routes>
       </div>
