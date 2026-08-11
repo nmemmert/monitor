@@ -446,6 +446,77 @@ class NotificationService {
     }
   }
 
+  async sendAgentAlert(agent, type, message) {
+    const isOffline = type === 'offline';
+    const isOnline  = type === 'online';
+    const emoji  = isOffline ? '🔴' : isOnline ? '🟢' : '⚠️';
+    const title  = isOffline ? `Agent Offline: ${agent.name}`
+                 : isOnline  ? `Agent Online: ${agent.name}`
+                 : `Agent Alert: ${agent.name}`;
+    const notifType = isOffline ? 'down' : isOnline ? 'up' : 'warning';
+
+    // In-app notification
+    try {
+      const db = require('./database');
+      const result = db.prepare(`
+        INSERT INTO notifications (resource_id, incident_id, type, title, message)
+        VALUES (NULL, NULL, ?, ?, ?)
+      `).run(notifType, title, message);
+      if (global.broadcastNotification) {
+        global.broadcastNotification({
+          id: result.lastInsertRowid, resource_id: null, resource_name: agent.name,
+          incident_id: null, type: notifType, title, message, read: 0,
+          created_at: new Date().toISOString(),
+        });
+      }
+    } catch (_) {}
+
+    // Email
+    if (this.emailEnabled && this.transporter && this.config.email_to) {
+      try {
+        await this.transporter.sendMail({
+          from: this.config.email_from,
+          to: this.config.email_to,
+          subject: `${emoji} SkyWatch Agent: ${title}`,
+          text: [
+            message,
+            '',
+            `Agent:    ${agent.name}`,
+            `Hostname: ${agent.hostname || '—'}`,
+            `IP:       ${agent.ip_address || '—'}`,
+            `OS:       ${agent.os_info || '—'}`,
+            `Time:     ${new Date().toLocaleString()}`,
+          ].join('\n'),
+        });
+      } catch (_) {}
+    }
+
+    // Webhook
+    if (this.webhookEnabled && this.config.webhook_url) {
+      try {
+        await axios.post(this.config.webhook_url, {
+          type: 'agent', event: type,
+          agent: { id: agent.id, name: agent.name, hostname: agent.hostname, ip_address: agent.ip_address },
+          title, message, timestamp: new Date().toISOString(),
+        });
+      } catch (_) {}
+    }
+
+    // Ntfy
+    if (this.ntfyEnabled && this.config.ntfy_topic) {
+      const ntfyBase = (this.config.ntfy_url || 'https://ntfy.sh').replace(/\/$/, '');
+      try {
+        await axios.post(`${ntfyBase}/`, {
+          topic: this.config.ntfy_topic,
+          title: `${emoji} ${title}`,
+          message,
+          priority: isOffline ? 4 : isOnline ? 2 : 3,
+          tags: isOffline ? ['red_circle'] : isOnline ? ['green_circle'] : ['warning'],
+        });
+      } catch (_) {}
+    }
+  }
+
   async sendNtfy(resource, type) {
     const ntfyUrl = this.config.ntfy_url || 'https://ntfy.sh';
     const ntfyTopic = this.config.ntfy_topic;

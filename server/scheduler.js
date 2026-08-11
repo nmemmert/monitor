@@ -3,13 +3,21 @@ const db = require('./database');
 const monitorService = require('./monitorService');
 const notificationService = require('./notificationService');
 
+const AGENT_CPU_THRESHOLD  = 90;
+const AGENT_MEM_THRESHOLD  = 90;
+const AGENT_DISK_THRESHOLD = 90;
+const AGENT_OFFLINE_MS     = 3 * 60 * 1000; // matches UI isOnline() check
+
 class Scheduler {
   constructor() {
     this.jobs = new Map();
     this.isRunning = false;
     this.lastCheckedAt = new Map();
     this.slowAlertCooldown = new Map();
-    this.slowConsecutiveCount = new Map(); // tracks consecutive slow checks per resource
+    this.slowConsecutiveCount = new Map();
+    // Agent health tracking — keyed by agent id
+    this.agentOnlineState = new Map(); // id -> boolean
+    this.agentAlertState  = new Map(); // id -> { cpu, mem, disk }
   }
 
   start() {
@@ -23,6 +31,11 @@ class Scheduler {
           this.isRunning = false;
         }
       }
+    });
+
+    // Agent health check every 2 minutes
+    cron.schedule('*/2 * * * *', async () => {
+      await this.checkAgents();
     });
 
     // Archive old checks + update baselines + check escalations daily at 2 AM
@@ -41,6 +54,111 @@ class Scheduler {
       this.archiveOldChecks();
       this.updateBaselines();
     }, 5000);
+  }
+
+  async checkAgents() {
+    try {
+      const rows = db.prepare(`
+        SELECT
+          a.id, a.name, a.hostname, a.ip_address, a.os_info, a.last_seen_at,
+          m.cpu_percent, m.mem_percent, m.disk_data
+        FROM agents a
+        LEFT JOIN agent_metrics m ON m.id = (
+          SELECT id FROM agent_metrics WHERE agent_id = a.id ORDER BY recorded_at DESC LIMIT 1
+        )
+        ORDER BY a.id
+      `).all();
+
+      const liveIds = new Set();
+
+      for (const agent of rows) {
+        liveIds.add(agent.id);
+
+        const isOnline = agent.last_seen_at
+          ? Date.now() - new Date(agent.last_seen_at).getTime() < AGENT_OFFLINE_MS
+          : false;
+
+        const wasOnline = this.agentOnlineState.get(agent.id);
+
+        if (wasOnline === undefined) {
+          // First poll — seed state without alerting
+          this.agentOnlineState.set(agent.id, isOnline);
+          this.agentAlertState.set(agent.id, { cpu: false, mem: false, disk: false });
+          continue;
+        }
+
+        // Online/offline transitions
+        if (wasOnline && !isOnline) {
+          await notificationService.sendAgentAlert(
+            agent, 'offline',
+            `Agent "${agent.name}" (${agent.hostname || agent.ip_address || 'unknown'}) has gone offline.`
+          );
+        } else if (!wasOnline && isOnline) {
+          await notificationService.sendAgentAlert(
+            agent, 'online',
+            `Agent "${agent.name}" (${agent.hostname || agent.ip_address || 'unknown'}) is back online.`
+          );
+          this.agentAlertState.set(agent.id, { cpu: false, mem: false, disk: false });
+        }
+
+        this.agentOnlineState.set(agent.id, isOnline);
+
+        if (!isOnline || agent.cpu_percent == null) continue;
+
+        const as = this.agentAlertState.get(agent.id) || { cpu: false, mem: false, disk: false };
+
+        // CPU
+        if (agent.cpu_percent > AGENT_CPU_THRESHOLD && !as.cpu) {
+          await notificationService.sendAgentAlert(
+            agent, 'cpu',
+            `Agent "${agent.name}" CPU is at ${Number(agent.cpu_percent).toFixed(1)}% (threshold: ${AGENT_CPU_THRESHOLD}%).`
+          );
+          as.cpu = true;
+        } else if (agent.cpu_percent <= AGENT_CPU_THRESHOLD) {
+          as.cpu = false;
+        }
+
+        // Memory
+        if (agent.mem_percent > AGENT_MEM_THRESHOLD && !as.mem) {
+          await notificationService.sendAgentAlert(
+            agent, 'memory',
+            `Agent "${agent.name}" memory is at ${Number(agent.mem_percent).toFixed(1)}% (threshold: ${AGENT_MEM_THRESHOLD}%).`
+          );
+          as.mem = true;
+        } else if (agent.mem_percent <= AGENT_MEM_THRESHOLD) {
+          as.mem = false;
+        }
+
+        // Disk — check all partitions
+        if (agent.disk_data) {
+          try {
+            const disks = JSON.parse(agent.disk_data);
+            const worst = disks.reduce((m, d) => (d.percent > (m?.percent ?? 0) ? d : m), null);
+            if (worst && worst.percent > AGENT_DISK_THRESHOLD && !as.disk) {
+              await notificationService.sendAgentAlert(
+                agent, 'disk',
+                `Agent "${agent.name}" disk ${worst.path} is at ${worst.percent}% (threshold: ${AGENT_DISK_THRESHOLD}%).`
+              );
+              as.disk = true;
+            } else if (!worst || worst.percent <= AGENT_DISK_THRESHOLD) {
+              as.disk = false;
+            }
+          } catch (_) {}
+        }
+
+        this.agentAlertState.set(agent.id, as);
+      }
+
+      // Remove state for deleted agents
+      for (const id of this.agentOnlineState.keys()) {
+        if (!liveIds.has(id)) {
+          this.agentOnlineState.delete(id);
+          this.agentAlertState.delete(id);
+        }
+      }
+    } catch (err) {
+      console.error('Agent health check error:', err.message);
+    }
   }
 
   archiveOldChecks() {

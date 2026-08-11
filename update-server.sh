@@ -1,52 +1,44 @@
 #!/bin/bash
-# Quick update script for SkyWatch on remote server
-# Run this on the server: bash update-server.sh
-
+# SkyWatch update script — run on the server to pull and deploy the latest version
+# Usage: bash update-server.sh [--skip-build]
 set -e
 
-echo "🔄 Updating SkyWatch..."
+APP_DIR="/opt/resource-monitor"
+SKIP_BUILD=false
+for arg in "$@"; do [[ "$arg" == "--skip-build" ]] && SKIP_BUILD=true; done
 
-cd /opt/resource-monitor
+echo "==> Updating SkyWatch at ${APP_DIR} ..."
+cd "$APP_DIR"
 
-echo "📥 Pulling latest code..."
+echo "==> Pulling latest code ..."
 git pull origin main
 
-echo "🔧 Ensuring build tools are present (needed for native modules)..."
-if command -v apt-get &>/dev/null; then
-	apt-get install -y --no-install-recommends make gcc g++ python3 2>&1 | tail -5
-elif command -v dnf &>/dev/null; then
-	dnf install -y make gcc gcc-c++ python3 2>&1 | tail -5
-elif command -v yum &>/dev/null; then
-	yum install -y make gcc gcc-c++ python3 2>&1 | tail -5
-fi
+echo "==> Installing/updating server dependencies ..."
+# Use npm install (not ci + rm -rf) so existing compatible packages stay in place
+npm install --omit=dev 2>&1 | tail -20
 
-echo "📦 Installing dependencies..."
-rm -rf node_modules
-
-# Prefer deterministic installs with npm ci when lockfile is present.
-if [ -f package-lock.json ]; then
-	if ! npm ci --omit=dev 2>&1 | tail -20; then
-		echo "npm ci failed, falling back to npm install..."
-		npm install --omit=dev 2>&1 | tail -20
-	fi
+if [ "$SKIP_BUILD" = false ]; then
+  echo "==> Building React client ..."
+  cd client
+  npm install 2>&1 | tail -10
+  npm run build 2>&1 | tail -20
+  cd ..
 else
-	echo "No package-lock.json found, using npm install..."
-	npm install --omit=dev 2>&1 | tail -20
+  echo "==> Skipping client build (--skip-build flag set)"
 fi
 
-echo "🔄 Restarting application..."
+echo "==> Restarting application via PM2 ..."
 pm2 restart resource-monitor
 
-echo "✅ Waiting for startup..."
-sleep 3
+echo "==> Waiting for startup ..."
+sleep 4
 
-echo "📋 Checking status..."
+echo "==> Status:"
 pm2 status resource-monitor
 
 echo ""
-echo "📊 Recent logs (checking for database migration):"
-pm2 logs resource-monitor --lines 30 --nostream
+echo "==> Health check:"
+curl -s http://localhost:3001/api/health | grep -o '"status":"[^"]*"' || echo "(no response yet)"
 
 echo ""
 echo "✅ Update complete!"
-echo "🌐 Check your dashboard at http://$(hostname -I | awk '{print $1}'):3001"
