@@ -95,45 +95,134 @@ function CopyCmd({ cmd }) {
   );
 }
 
-// ── Install instructions panel ────────────────────────────────────────────────
+// ── Platform-specific install steps ──────────────────────────────────────────
 
-function InstallPanel({ serverUrl }) {
-  const scriptCmd    = `curl -fsSL ${serverUrl}/api/agents/script   -o skywatch-agent.sh`;
-  const installerCmd = `curl -fsSL ${serverUrl}/api/agents/installer -o install-agent.sh`;
-  const runCmd       = `sudo bash install-agent.sh --server-url ${serverUrl}`;
-
+function LinuxSteps({ serverUrl }) {
   return (
-    <div className="ag-install-panel">
-      <h3 className="ag-install-title">Install agent on a Linux host</h3>
+    <>
       <p className="ag-install-note">
-        Run the following on the target machine (Ubuntu 16.04+ / Debian 9+ / RHEL 7+).
-        The agent registers itself automatically and appears here within a minute.
+        Ubuntu 16.04+ / Debian 9+ / RHEL 7+. Runs as a systemd service.
       </p>
-
       <div className="ag-install-steps">
         <div className="ag-step">
           <span className="ag-step-num">1</span>
           <div className="ag-step-body">
             <div className="ag-step-label">Download the scripts</div>
-            <CopyCmd cmd={scriptCmd} />
-            <CopyCmd cmd={installerCmd} />
+            <CopyCmd cmd={`curl -fsSL ${serverUrl}/api/agents/script    -o skywatch-agent.sh`} />
+            <CopyCmd cmd={`curl -fsSL ${serverUrl}/api/agents/installer  -o install-agent.sh`} />
           </div>
         </div>
-
         <div className="ag-step">
           <span className="ag-step-num">2</span>
           <div className="ag-step-body">
             <div className="ag-step-label">Run the installer as root</div>
-            <CopyCmd cmd={runCmd} />
+            <CopyCmd cmd={`sudo bash install-agent.sh --server-url ${serverUrl}`} />
           </div>
         </div>
       </div>
-
       <p className="ag-install-note ag-install-note-sm">
-        Optional flags: <code>--interval&nbsp;&lt;secs&gt;</code> (default&nbsp;60),{' '}
-        <code>--name&nbsp;&lt;label&gt;</code>, <code>--registration-key&nbsp;&lt;key&gt;</code>.
-        To remove: <code>sudo bash install-agent.sh --uninstall</code>
+        Optional: <code>--interval&nbsp;&lt;secs&gt;</code>, <code>--name&nbsp;&lt;label&gt;</code>,{' '}
+        <code>--registration-key&nbsp;&lt;key&gt;</code>.
+        Remove: <code>sudo bash install-agent.sh --uninstall</code>
       </p>
+    </>
+  );
+}
+
+function MacosSteps({ serverUrl }) {
+  return (
+    <>
+      <p className="ag-install-note">
+        macOS 10.15+ (Intel &amp; Apple Silicon). Runs as a launchd system daemon.
+      </p>
+      <div className="ag-install-steps">
+        <div className="ag-step">
+          <span className="ag-step-num">1</span>
+          <div className="ag-step-body">
+            <div className="ag-step-label">Download the scripts</div>
+            <CopyCmd cmd={`curl -fsSL ${serverUrl}/api/agents/script-macos    -o skywatch-agent-macos.sh`} />
+            <CopyCmd cmd={`curl -fsSL ${serverUrl}/api/agents/installer-macos  -o install-agent-macos.sh`} />
+          </div>
+        </div>
+        <div className="ag-step">
+          <span className="ag-step-num">2</span>
+          <div className="ag-step-body">
+            <div className="ag-step-label">Run the installer as root</div>
+            <CopyCmd cmd={`sudo bash install-agent-macos.sh --server-url ${serverUrl}`} />
+          </div>
+        </div>
+      </div>
+      <p className="ag-install-note ag-install-note-sm">
+        Optional: <code>--interval&nbsp;&lt;secs&gt;</code>, <code>--name&nbsp;&lt;label&gt;</code>,{' '}
+        <code>--registration-key&nbsp;&lt;key&gt;</code>.
+        Remove: <code>sudo bash install-agent-macos.sh --uninstall</code>
+      </p>
+    </>
+  );
+}
+
+function WindowsSteps({ serverUrl }) {
+  return (
+    <>
+      <p className="ag-install-note">
+        Windows 10 / 11 / Server 2019+. Runs via Task Scheduler as SYSTEM.
+        Open <strong>PowerShell as Administrator</strong> and run:
+      </p>
+      <div className="ag-install-steps">
+        <div className="ag-step">
+          <span className="ag-step-num">1</span>
+          <div className="ag-step-body">
+            <div className="ag-step-label">Download the installer</div>
+            <CopyCmd cmd={`Invoke-WebRequest "${serverUrl}/api/agents/installer-windows" -OutFile install-agent-windows.ps1`} />
+          </div>
+        </div>
+        <div className="ag-step">
+          <span className="ag-step-num">2</span>
+          <div className="ag-step-body">
+            <div className="ag-step-label">Run the installer</div>
+            <CopyCmd cmd={`.\\install-agent-windows.ps1 -ServerUrl "${serverUrl}"`} />
+          </div>
+        </div>
+      </div>
+      <p className="ag-install-note ag-install-note-sm">
+        Optional: <code>-Interval&nbsp;&lt;secs&gt;</code>, <code>-AgentName&nbsp;&lt;label&gt;</code>,{' '}
+        <code>-RegistrationKey&nbsp;&lt;key&gt;</code>.
+        Remove: <code>.\\install-agent-windows.ps1&nbsp;-Uninstall</code>
+      </p>
+    </>
+  );
+}
+
+// ── Install instructions panel ────────────────────────────────────────────────
+
+const PLATFORMS = [
+  { id: 'linux',   label: '🐧 Linux'   },
+  { id: 'macos',   label: '🍎 macOS'   },
+  { id: 'windows', label: '🪟 Windows' },
+];
+
+function InstallPanel({ serverUrl }) {
+  const [platform, setPlatform] = useState('linux');
+
+  return (
+    <div className="ag-install-panel">
+      <h3 className="ag-install-title">Install agent on a host</h3>
+
+      <div className="ag-platform-tabs">
+        {PLATFORMS.map(p => (
+          <button
+            key={p.id}
+            className={`ag-platform-tab${platform === p.id ? ' ag-platform-tab-active' : ''}`}
+            onClick={() => setPlatform(p.id)}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {platform === 'linux'   && <LinuxSteps   serverUrl={serverUrl} />}
+      {platform === 'macos'   && <MacosSteps   serverUrl={serverUrl} />}
+      {platform === 'windows' && <WindowsSteps serverUrl={serverUrl} />}
     </div>
   );
 }
@@ -273,7 +362,7 @@ export default function Agents() {
       {/* ── Header ── */}
       <div className="ag-header">
         <div className="ag-header-left">
-          <h2 className="ag-page-title">Linux Agents</h2>
+          <h2 className="ag-page-title">Agents</h2>
           {agents.length > 0 && (
             <span className="ag-count-pill">
               {onlineCount} / {agents.length} online

@@ -49,6 +49,32 @@
 .ag-install-toggle:hover { background: var(--border); }
 .ag-install-toggle-active { border-color: var(--accent); color: var(--accent); }
 
+/* ── Platform tabs ───────────────────────────────────── */
+.ag-platform-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.75rem 0 1rem;
+  flex-wrap: wrap;
+}
+
+.ag-platform-tab {
+  padding: 0.35rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.ag-platform-tab:hover { background: var(--border); color: var(--text); }
+.ag-platform-tab-active {
+  background: rgba(20,184,166,0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ── Install panel ───────────────────────────────────── */
 .ag-install-panel {
   margin-bottom: 2rem;

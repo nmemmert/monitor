@@ -2196,6 +2196,48 @@ app.get('/api/agents/installer', (req, res) => {
   }
 });
 
+// macOS agent scripts
+app.get('/api/agents/script-macos', (req, res) => {
+  const fs = require('fs');
+  const p = path.join(__dirname, '../agent/skywatch-agent-macos.sh');
+  if (fs.existsSync(p)) {
+    res.setHeader('Content-Type', 'text/x-sh');
+    res.setHeader('Content-Disposition', 'attachment; filename="skywatch-agent-macos.sh"');
+    res.sendFile(p);
+  } else { res.status(404).json({ error: 'macOS agent script not found' }); }
+});
+
+app.get('/api/agents/installer-macos', (req, res) => {
+  const fs = require('fs');
+  const p = path.join(__dirname, '../agent/install-agent-macos.sh');
+  if (fs.existsSync(p)) {
+    res.setHeader('Content-Type', 'text/x-sh');
+    res.setHeader('Content-Disposition', 'attachment; filename="install-agent-macos.sh"');
+    res.sendFile(p);
+  } else { res.status(404).json({ error: 'macOS installer not found' }); }
+});
+
+// Windows agent scripts
+app.get('/api/agents/script-windows', (req, res) => {
+  const fs = require('fs');
+  const p = path.join(__dirname, '../agent/skywatch-agent-windows.ps1');
+  if (fs.existsSync(p)) {
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', 'attachment; filename="skywatch-agent-windows.ps1"');
+    res.sendFile(p);
+  } else { res.status(404).json({ error: 'Windows agent script not found' }); }
+});
+
+app.get('/api/agents/installer-windows', (req, res) => {
+  const fs = require('fs');
+  const p = path.join(__dirname, '../agent/install-agent-windows.ps1');
+  if (fs.existsSync(p)) {
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', 'attachment; filename="install-agent-windows.ps1"');
+    res.sendFile(p);
+  } else { res.status(404).json({ error: 'Windows installer not found' }); }
+});
+
 // Register a new Linux agent — returns a bearer token the agent uses for all future calls
 app.post('/api/agents/register', rateLimit(5), (req, res) => {
   // Optional: if AGENT_REGISTRATION_KEY is set in env, require it as X-Registration-Key header
