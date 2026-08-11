@@ -228,6 +228,61 @@ function Send-Metrics {
     }
 }
 
+# ── Command execution ─────────────────────────────────────────────────────────
+
+function Poll-Commands {
+    try {
+        $resp = Invoke-WebRequest `
+            -Uri     "$script:SKYWATCH_URL/api/agents/commands/pending" `
+            -Headers @{ 'Authorization' = "Bearer $script:AGENT_TOKEN" } `
+            -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+
+        if ($resp.StatusCode -eq 204) { return }
+        if ($resp.StatusCode -ne 200) { return }
+
+        $data   = $resp.Content | ConvertFrom-Json
+        $cmdId  = $data.id
+        $cmdStr = $data.command
+        if (-not $cmdId -or -not $cmdStr) { return }
+
+        Write-Log "Running command #${cmdId}: ${cmdStr}"
+
+        $output   = ""
+        $exitCode = -1
+        try {
+            $proc = Start-Process -FilePath "powershell.exe" `
+                -ArgumentList "-NonInteractive", "-Command", $cmdStr `
+                -Wait -PassThru -NoNewWindow `
+                -RedirectStandardOutput "$env:TEMP\sw_cmd_out.txt" `
+                -RedirectStandardError  "$env:TEMP\sw_cmd_err.txt" `
+                -ErrorAction Stop
+            $exitCode = $proc.ExitCode
+            $stdout = if (Test-Path "$env:TEMP\sw_cmd_out.txt") { Get-Content "$env:TEMP\sw_cmd_out.txt" -Raw } else { "" }
+            $stderr = if (Test-Path "$env:TEMP\sw_cmd_err.txt") { Get-Content "$env:TEMP\sw_cmd_err.txt" -Raw } else { "" }
+            $output = ($stdout + $stderr).Substring(0, [Math]::Min(($stdout + $stderr).Length, 131072))
+        } catch {
+            $output   = "ERROR: $_"
+            $exitCode = 1
+        } finally {
+            Remove-Item "$env:TEMP\sw_cmd_out.txt", "$env:TEMP\sw_cmd_err.txt" -ErrorAction SilentlyContinue
+        }
+
+        $payload = @{ output = $output; exit_code = $exitCode } | ConvertTo-Json -Compress
+        Invoke-RestMethod `
+            -Uri     "$script:SKYWATCH_URL/api/agents/commands/$cmdId/result" `
+            -Method  POST `
+            -Body    $payload `
+            -Headers @{ 'Content-Type' = 'application/json'; 'Authorization' = "Bearer $script:AGENT_TOKEN" } `
+            -TimeoutSec 15 -ErrorAction SilentlyContinue | Out-Null
+
+    } catch [System.Net.WebException] {
+        # 204 No Content arrives as an exception in some PS versions — that's fine
+        if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq 204) { return }
+    } catch {
+        # Network errors — silently ignore
+    }
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 # Ensure log directory exists
@@ -253,5 +308,6 @@ Write-Log "SkyWatch Agent v$VERSION started (Windows) — server=$script:SKYWATC
 
 while ($true) {
     Send-Metrics
+    Poll-Commands
     Start-Sleep -Seconds ($interval - 1)   # -1 accounts for the 1s CPU sample sleep
 }

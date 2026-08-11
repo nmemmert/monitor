@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import './Agents.css';
 
@@ -227,10 +227,102 @@ function InstallPanel({ serverUrl }) {
   );
 }
 
+// ── Command terminal panel ────────────────────────────────────────────────────
+
+function CommandTerminal({ agentId, agentName }) {
+  const [commands, setCommands] = useState([]);
+  const [input, setInput]       = useState('');
+  const [sending, setSending]   = useState(false);
+  const [expanded, setExpanded] = useState({});
+  const pollRef = useRef(null);
+
+  const fetchCommands = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`/api/agents/${agentId}/commands`);
+      setCommands(data.commands || []);
+    } catch (_) {}
+  }, [agentId]);
+
+  useEffect(() => {
+    fetchCommands();
+    pollRef.current = setInterval(fetchCommands, 4000);
+    return () => clearInterval(pollRef.current);
+  }, [fetchCommands]);
+
+  const send = async () => {
+    const cmd = input.trim();
+    if (!cmd || sending) return;
+    setSending(true);
+    try {
+      await axios.post(`/api/agents/${agentId}/commands`, { command: cmd });
+      setInput('');
+      fetchCommands();
+    } catch (_) {}
+    setSending(false);
+  };
+
+  const onKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  };
+
+  const toggleExpand = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const statusIcon = (s) => s === 'completed' ? '✓' : s === 'failed' ? '✗' : s === 'running' ? '↻' : '…';
+  const statusClass = (s) => `ag-cmd-status ag-cmd-status-${s}`;
+
+  return (
+    <div className="ag-terminal">
+      <div className="ag-terminal-title">Terminal — {agentName}</div>
+
+      <div className="ag-terminal-input-row">
+        <span className="ag-terminal-prompt">$</span>
+        <input
+          className="ag-terminal-input"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={onKey}
+          placeholder="Enter command…"
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <button
+          className="ag-terminal-run"
+          onClick={send}
+          disabled={!input.trim() || sending}
+        >
+          {sending ? '…' : 'Run'}
+        </button>
+      </div>
+
+      <div className="ag-terminal-history">
+        {commands.length === 0 && (
+          <div className="ag-terminal-empty">No commands yet.</div>
+        )}
+        {commands.map(cmd => (
+          <div key={cmd.id} className="ag-terminal-entry">
+            <div className="ag-terminal-entry-head" onClick={() => cmd.output && toggleExpand(cmd.id)}>
+              <span className={statusClass(cmd.status)}>{statusIcon(cmd.status)}</span>
+              <code className="ag-terminal-entry-cmd">{cmd.command}</code>
+              <span className="ag-terminal-entry-time">{timeAgo(cmd.created_at)}</span>
+              {cmd.output && (
+                <span className="ag-terminal-expand">{expanded[cmd.id] ? '▲' : '▼'}</span>
+              )}
+            </div>
+            {expanded[cmd.id] && cmd.output && (
+              <pre className="ag-terminal-output">{cmd.output}</pre>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Single agent card ─────────────────────────────────────────────────────────
 
 function AgentCard({ agent, onDelete }) {
   const [confirmDel, setConfirmDel] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
   const online = isOnline(agent.last_seen_at);
   const topDisks = (agent.disk || []).slice(0, 3);
 
@@ -250,6 +342,11 @@ function AgentCard({ agent, onDelete }) {
         </div>
 
         <div className="ag-card-actions">
+          <button
+            className={`ag-btn ag-btn-terminal${showTerminal ? ' ag-btn-terminal-active' : ''}`}
+            onClick={() => setShowTerminal(v => !v)}
+            title="Open terminal"
+          >&gt;_</button>
           {confirmDel ? (
             <>
               <button className="ag-btn ag-btn-danger" onClick={() => onDelete(agent.id)}>Delete</button>
@@ -318,6 +415,10 @@ function AgentCard({ agent, onDelete }) {
         </>
       ) : (
         <div className="ag-no-data">Waiting for first report…</div>
+      )}
+
+      {showTerminal && (
+        <CommandTerminal agentId={agent.id} agentName={agent.name} />
       )}
     </div>
   );

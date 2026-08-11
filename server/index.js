@@ -16,6 +16,27 @@ const metrics = require('./metrics');
 const { discoverNetwork, getLocalSubnets } = require('./networkDiscovery');
 const auditLog = require('./auditLog');
 
+// Initialize agent_commands table
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_commands (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id    INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      command     TEXT    NOT NULL,
+      status      TEXT    NOT NULL DEFAULT 'pending',
+      output      TEXT,
+      exit_code   INTEGER,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      started_at  DATETIME,
+      completed_at DATETIME
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_commands_agent ON agent_commands(agent_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_commands_status ON agent_commands(agent_id, status);
+  `);
+} catch (error) {
+  console.error('Error initializing agent_commands table:', error);
+}
+
 // Initialize notifications table if it doesn't exist
 try {
   db.exec(`
@@ -2405,6 +2426,108 @@ app.delete('/api/agents/:id', (req, res) => {
     res.json({ message: 'Agent deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete agent' });
+  }
+});
+
+// ── Agent command queue ────────────────────────────────────────────────────────
+
+// Dashboard → queue a command for a specific agent
+app.post('/api/agents/:id/commands', (req, res) => {
+  const agentId = parseInt(req.params.id, 10);
+  const { command } = req.body;
+  if (!command || typeof command !== 'string' || !command.trim()) {
+    return res.status(400).json({ error: 'command is required' });
+  }
+  const agent = db.prepare('SELECT id FROM agents WHERE id = ?').get(agentId);
+  if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+  try {
+    const result = db.prepare(
+      `INSERT INTO agent_commands (agent_id, command) VALUES (?, ?)`
+    ).run(agentId, command.trim());
+    res.json({ id: result.lastInsertRowid, status: 'pending' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to queue command' });
+  }
+});
+
+// Dashboard → get command history for an agent (last 50)
+app.get('/api/agents/:id/commands', (req, res) => {
+  const agentId = parseInt(req.params.id, 10);
+  try {
+    const cmds = db.prepare(`
+      SELECT id, command, status, output, exit_code,
+        REPLACE(created_at,   ' ', 'T') || 'Z' AS created_at,
+        REPLACE(started_at,   ' ', 'T') || 'Z' AS started_at,
+        REPLACE(completed_at, ' ', 'T') || 'Z' AS completed_at
+      FROM agent_commands
+      WHERE agent_id = ?
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).all(agentId);
+    res.json({ commands: cmds });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch commands' });
+  }
+});
+
+// Agent → dequeue one pending command (marks it running; returns 204 if queue empty)
+app.get('/api/agents/commands/pending', (req, res) => {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
+  if (!token) return res.status(401).json({ error: 'Authorization required' });
+
+  const agent = db.prepare('SELECT id FROM agents WHERE token = ?').get(token);
+  if (!agent) return res.status(401).json({ error: 'Invalid token' });
+
+  try {
+    const cmd = db.prepare(`
+      SELECT id, command FROM agent_commands
+      WHERE agent_id = ? AND status = 'pending'
+      ORDER BY created_at ASC
+      LIMIT 1
+    `).get(agent.id);
+
+    if (!cmd) return res.status(204).end();
+
+    db.prepare(
+      `UPDATE agent_commands SET status = 'running', started_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).run(cmd.id);
+
+    res.json({ id: cmd.id, command: cmd.command });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to dequeue command' });
+  }
+});
+
+// Agent → post result for a completed command
+app.post('/api/agents/commands/:cmdId/result', (req, res) => {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
+  if (!token) return res.status(401).json({ error: 'Authorization required' });
+
+  const agent = db.prepare('SELECT id FROM agents WHERE token = ?').get(token);
+  if (!agent) return res.status(401).json({ error: 'Invalid token' });
+
+  const cmdId = parseInt(req.params.cmdId, 10);
+  const cmd = db.prepare('SELECT id, agent_id FROM agent_commands WHERE id = ?').get(cmdId);
+  if (!cmd || cmd.agent_id !== agent.id) return res.status(404).json({ error: 'Command not found' });
+
+  const { output, exit_code } = req.body;
+  const status = (exit_code === 0 || exit_code === '0') ? 'completed' : 'failed';
+  // Cap output at 128 KB
+  const safeOutput = typeof output === 'string' ? output.slice(0, 131072) : '';
+
+  try {
+    db.prepare(`
+      UPDATE agent_commands
+      SET status = ?, output = ?, exit_code = ?, completed_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(status, safeOutput, parseInt(exit_code) ?? -1, cmdId);
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to store result' });
   }
 });
 

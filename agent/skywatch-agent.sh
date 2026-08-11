@@ -263,6 +263,59 @@ report_metrics() {
     fi
 }
 
+# Poll for and execute one pending command from the server
+poll_commands() {
+    local resp http_code
+    resp=$(curl -sf -m 10 \
+        -H "Authorization: Bearer ${AGENT_TOKEN}" \
+        -w '\n__HTTP_CODE__%{http_code}' \
+        "${SKYWATCH_URL}/api/agents/commands/pending" 2>/dev/null) || return 0
+
+    http_code=$(echo "$resp" | grep -o '__HTTP_CODE__[0-9]*' | tail -1 | grep -o '[0-9]*')
+    resp=$(echo "$resp" | sed '/__HTTP_CODE__/d')
+
+    # 204 = no pending commands
+    [ "$http_code" = "204" ] && return 0
+    [ "$http_code" != "200" ] && return 0
+
+    local cmd_id cmd_str
+    cmd_id=$(echo "$resp" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
+    # Extract command value (handles escaped quotes)
+    cmd_str=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('command',''))" 2>/dev/null \
+        || echo "$resp" | sed -n 's/.*"command":"\([^"]*\)".*/\1/p')
+
+    [ -z "$cmd_id" ] || [ -z "$cmd_str" ] && return 0
+
+    log "Running command #${cmd_id}: ${cmd_str}"
+
+    # Execute with 60 s timeout, capture output, cap at 128 KB
+    local tmp_out exit_code
+    tmp_out=$(mktemp)
+    timeout 60 bash -c "$cmd_str" > "$tmp_out" 2>&1
+    exit_code=$?
+
+    # Truncate to 128 KB
+    truncate -s -"$(( $(wc -c < "$tmp_out") > 131072 ? $(wc -c < "$tmp_out") - 131072 : 0 ))" "$tmp_out" 2>/dev/null || true
+
+    # Build JSON payload via python (handles all escaping correctly)
+    local tmp_json
+    tmp_json=$(mktemp)
+    python3 - "$tmp_out" "$exit_code" > "$tmp_json" 2>/dev/null << 'PYEOF'
+import sys, json
+with open(sys.argv[1]) as f:
+    output = f.read(131072)
+print(json.dumps({"output": output, "exit_code": int(sys.argv[2])}))
+PYEOF
+
+    curl -sf -m 15 -X POST \
+        -H "Authorization: Bearer ${AGENT_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "@${tmp_json}" \
+        "${SKYWATCH_URL}/api/agents/commands/${cmd_id}/result" >/dev/null 2>&1 || true
+
+    rm -f "$tmp_out" "$tmp_json"
+}
+
 main() {
     load_config
 
@@ -291,6 +344,7 @@ main() {
 
     while true; do
         report_metrics
+        poll_commands
         # get_cpu_percent already consumed ~1 s; subtract it from the sleep
         local sleep_time=$(( interval - 1 ))
         [ "$sleep_time" -lt 1 ] && sleep_time=1
