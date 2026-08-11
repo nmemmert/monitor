@@ -2168,6 +2168,191 @@ app.post('/api/resources/import', express.text({ type: 'text/csv' }), (req, res)
   }
 });
 
+// ===== Agent API =====
+
+// Serve the agent install script so remote hosts can curl it
+app.get('/api/agents/script', (req, res) => {
+  const fs = require('fs');
+  const scriptPath = path.join(__dirname, '../agent/skywatch-agent.sh');
+  if (fs.existsSync(scriptPath)) {
+    res.setHeader('Content-Type', 'text/x-sh');
+    res.setHeader('Content-Disposition', 'attachment; filename="skywatch-agent.sh"');
+    res.sendFile(scriptPath);
+  } else {
+    res.status(404).json({ error: 'Agent script not found on this server' });
+  }
+});
+
+// Register a new Linux agent — returns a bearer token the agent uses for all future calls
+app.post('/api/agents/register', rateLimit(5), (req, res) => {
+  // Optional: if AGENT_REGISTRATION_KEY is set in env, require it as X-Registration-Key header
+  const requiredKey = process.env.AGENT_REGISTRATION_KEY;
+  if (requiredKey) {
+    const provided = req.headers['x-registration-key'] || '';
+    if (provided !== requiredKey) {
+      return res.status(403).json({ error: 'Invalid or missing registration key' });
+    }
+  }
+
+  const { name, hostname, ip_address, os_info } = req.body;
+  if (!name) return res.status(400).json({ error: 'Agent name is required' });
+
+  try {
+    const token = randomUUID();
+    const result = db.prepare(`
+      INSERT INTO agents (name, token, hostname, ip_address, os_info)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(name, token, hostname || name, ip_address || null, os_info || null);
+
+    res.json({ id: result.lastInsertRowid, token, name });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to register agent', details: err.message });
+  }
+});
+
+// Receive a metrics snapshot from an agent (authenticated by bearer token)
+app.post('/api/agents/report', rateLimit(120), (req, res) => {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
+  if (!token) return res.status(401).json({ error: 'Authorization token required' });
+
+  const agent = db.prepare('SELECT id FROM agents WHERE token = ?').get(token);
+  if (!agent) return res.status(401).json({ error: 'Invalid token' });
+
+  const {
+    cpu_percent, mem_total, mem_used, mem_percent,
+    disk, load_1, load_5, load_15,
+    uptime_seconds, process_count, net_bytes_sent, net_bytes_recv, ip_address,
+  } = req.body;
+
+  try {
+    db.prepare(`
+      UPDATE agents SET last_seen_at = CURRENT_TIMESTAMP, ip_address = COALESCE(?, ip_address)
+      WHERE id = ?
+    `).run(ip_address || null, agent.id);
+
+    db.prepare(`
+      INSERT INTO agent_metrics
+        (agent_id, cpu_percent, mem_total, mem_used, mem_percent, disk_data,
+         load_1, load_5, load_15, uptime_seconds, process_count, net_bytes_sent, net_bytes_recv)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      agent.id,
+      cpu_percent   ?? null,
+      mem_total     ?? null,
+      mem_used      ?? null,
+      mem_percent   ?? null,
+      disk ? JSON.stringify(disk) : null,
+      load_1        ?? null,
+      load_5        ?? null,
+      load_15       ?? null,
+      uptime_seconds ?? null,
+      process_count ?? null,
+      net_bytes_sent ?? null,
+      net_bytes_recv ?? null,
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to store metrics' });
+  }
+});
+
+// List all agents with their most-recent metrics snapshot
+app.get('/api/agents', (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT
+        a.id, a.name, a.hostname, a.ip_address, a.os_info,
+        REPLACE(a.last_seen_at, ' ', 'T') || 'Z' AS last_seen_at,
+        REPLACE(a.created_at,   ' ', 'T') || 'Z' AS created_at,
+        m.cpu_percent, m.mem_total, m.mem_used, m.mem_percent,
+        m.disk_data, m.load_1, m.load_5, m.load_15,
+        m.uptime_seconds, m.process_count, m.net_bytes_sent, m.net_bytes_recv,
+        REPLACE(m.recorded_at, ' ', 'T') || 'Z' AS last_metric_at
+      FROM agents a
+      LEFT JOIN agent_metrics m ON m.id = (
+        SELECT id FROM agent_metrics WHERE agent_id = a.id ORDER BY recorded_at DESC LIMIT 1
+      )
+      ORDER BY a.name ASC
+    `).all();
+
+    const agents = rows.map(({ disk_data, ...a }) => ({
+      ...a,
+      disk: disk_data ? JSON.parse(disk_data) : null,
+    }));
+
+    res.json({ agents });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list agents' });
+  }
+});
+
+// Get a single agent with its latest metrics
+app.get('/api/agents/:id', (req, res) => {
+  try {
+    const agent = db.prepare(`
+      SELECT id, name, hostname, ip_address, os_info,
+        REPLACE(last_seen_at, ' ', 'T') || 'Z' AS last_seen_at,
+        REPLACE(created_at,   ' ', 'T') || 'Z' AS created_at
+      FROM agents WHERE id = ?
+    `).get(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const raw = db.prepare(
+      'SELECT * FROM agent_metrics WHERE agent_id = ? ORDER BY recorded_at DESC LIMIT 1'
+    ).get(agent.id);
+
+    const latest = raw
+      ? (() => { const { disk_data, ...r } = raw; return { ...r, disk: disk_data ? JSON.parse(disk_data) : null }; })()
+      : null;
+
+    res.json({ ...agent, latest });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get agent' });
+  }
+});
+
+// Historical metrics for an agent (default: last hour, up to 500 rows)
+app.get('/api/agents/:id/metrics', (req, res) => {
+  const { limit = 60, hours = 1 } = req.query;
+  try {
+    const agent = db.prepare('SELECT id FROM agents WHERE id = ?').get(req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const rows = db.prepare(`
+      SELECT cpu_percent, mem_total, mem_used, mem_percent, disk_data,
+        load_1, load_5, load_15, uptime_seconds, process_count,
+        net_bytes_sent, net_bytes_recv,
+        REPLACE(recorded_at, ' ', 'T') || 'Z' AS recorded_at
+      FROM agent_metrics
+      WHERE agent_id = ? AND recorded_at > datetime('now', ?)
+      ORDER BY recorded_at ASC
+      LIMIT ?
+    `).all(req.params.id, `-${parseInt(hours)} hours`, Math.min(parseInt(limit), 500));
+
+    const metrics = rows.map(({ disk_data, ...r }) => ({
+      ...r,
+      disk: disk_data ? JSON.parse(disk_data) : null,
+    }));
+
+    res.json({ metrics });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get metrics' });
+  }
+});
+
+// Delete an agent and all its stored metrics
+app.delete('/api/agents/:id', (req, res) => {
+  try {
+    const result = db.prepare('DELETE FROM agents WHERE id = ?').run(req.params.id);
+    if (result.changes === 0) return res.status(404).json({ error: 'Agent not found' });
+    res.json({ message: 'Agent deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete agent' });
+  }
+});
+
 // Serve React app with proper MIME types
 const mimeTypes = {
   '.js': 'application/javascript',

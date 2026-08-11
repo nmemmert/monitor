@@ -330,6 +330,44 @@ try { db.prepare("ALTER TABLE resources ADD COLUMN last_heartbeat_at DATETIME").
 // Feature: status page per-resource visibility
 try { db.prepare("ALTER TABLE resources ADD COLUMN is_public INTEGER DEFAULT 1").run(); } catch(e) {}
 
+// Feature: Linux agent monitoring
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agents (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT    NOT NULL,
+      token       TEXT    NOT NULL UNIQUE,
+      hostname    TEXT,
+      ip_address  TEXT,
+      os_info     TEXT,
+      last_seen_at DATETIME,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_metrics (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id        INTEGER NOT NULL,
+      cpu_percent     REAL,
+      mem_total       INTEGER,
+      mem_used        INTEGER,
+      mem_percent     REAL,
+      disk_data       TEXT,
+      load_1          REAL,
+      load_5          REAL,
+      load_15         REAL,
+      uptime_seconds  INTEGER,
+      process_count   INTEGER,
+      net_bytes_sent  INTEGER,
+      net_bytes_recv  INTEGER,
+      recorded_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agents_token            ON agents(token);
+    CREATE INDEX IF NOT EXISTS idx_agent_metrics_agent_time ON agent_metrics(agent_id, recorded_at DESC);
+  `);
+} catch(e) {}
+
 // Helpful indexes for time-range queries
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_checks_resource_time ON checks(resource_id, checked_at DESC);
